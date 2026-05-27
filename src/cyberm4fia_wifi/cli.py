@@ -44,7 +44,12 @@ def _ctx_obj(ctx: click.Context) -> dict[str, object]:
         "own or have explicit, written permission to audit."
     ),
 )
-@click.option("--iface", default=None, help="Wireless interface to use (e.g. wlan0).")
+@click.option(
+    "--iface",
+    default=None,
+    envvar="IFACE",
+    help="Wireless interface to use (e.g. wlan0). Also reads IFACE.",
+)
 @click.option("--verbose", "-v", is_flag=True, help="Verbose logging.")
 @click.pass_context
 def main(ctx: click.Context, iface: str | None, verbose: bool) -> None:

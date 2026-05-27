@@ -12,6 +12,11 @@ from cyberm4fia_wifi.plugins.scan import interactive_pick_adapter
 from cyberm4fia_wifi.utils import paths
 
 
+class _TTY(io.StringIO):
+    def isatty(self) -> bool:
+        return True
+
+
 def _ad(iface: str, profile: AdapterProfile) -> DetectedAdapter:
     return DetectedAdapter(iface=iface, profile=profile, vendor_id=0, product_id=0)
 
@@ -25,6 +30,25 @@ class TestInteractivePicker:
         )
         assert chosen is a
         assert out.getvalue() == ""  # no prompt shown
+
+    def test_single_adapter_uses_tui_picker_when_tty(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from cyberm4fia_wifi.plugins import scan
+
+        a = _ad("wlan0", ADAPTERS[(0x0CF3, 0x9271)])
+        called = False
+
+        def fake_picker(adapters: list[DetectedAdapter]) -> DetectedAdapter:
+            nonlocal called
+            called = True
+            assert adapters == [a]
+            return a
+
+        monkeypatch.setattr(scan, "_pick_adapter_tui", fake_picker)
+
+        chosen = interactive_pick_adapter([a], preferred_iface=None, stdin=_TTY(), stdout=_TTY())
+
+        assert chosen is a
+        assert called is True
 
     def test_explicit_iface_skips_prompt(self) -> None:
         a = _ad("wlan0", ADAPTERS[(0x0CF3, 0x9271)])

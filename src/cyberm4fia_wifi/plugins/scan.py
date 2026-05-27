@@ -11,10 +11,12 @@ is the orchestration glue and the surface the CLI binds to.
 
 from __future__ import annotations
 
+import contextlib
 import sys
-from typing import Any
+from typing import Any, ClassVar
 
 import click
+from rich.text import Text
 
 from cyberm4fia_wifi.core.adapter import AdapterManager, DetectedAdapter
 from cyberm4fia_wifi.core.auth import PluginRisk
@@ -54,10 +56,10 @@ def interactive_pick_adapter(
 ) -> DetectedAdapter:
     """Ask the operator which adapter to use when more than one is present.
 
-    Explicit ``--iface`` always wins; a single detected adapter is auto-picked
-    silently. Two or more adapters trigger a numbered prompt so the operator
-    can compare chipset / band / injection capability before committing to
-    monitor mode.
+    Explicit ``--iface`` always wins. In an interactive terminal, scan startup
+    always shows a picker before monitor mode is touched; non-TTY callers keep
+    the old behavior (single adapter auto-picks, multiple adapters use a
+    numbered prompt).
     """
     if not adapters:
         raise click.ClickException(
@@ -72,6 +74,9 @@ def interactive_pick_adapter(
             f"requested --iface {preferred_iface!r} not found; "
             f"available: {[a.iface for a in adapters]}"
         )
+    if _is_tty(stdin or sys.stdin) and _is_tty(stdout or sys.stdout):
+        return _pick_adapter_tui(adapters)
+
     if len(adapters) == 1:
         return adapters[0]
 
@@ -98,10 +103,100 @@ def interactive_pick_adapter(
     except ValueError as exc:
         raise click.ClickException(f"not a number: {raw!r}") from exc
     if not 1 <= idx <= len(adapters):
-        raise click.ClickException(
-            f"choice {idx} out of range [1-{len(adapters)}]"
-        )
+        raise click.ClickException(f"choice {idx} out of range [1-{len(adapters)}]")
     return adapters[idx - 1]
+
+
+def _is_tty(stream: Any) -> bool:
+    isatty = getattr(stream, "isatty", None)
+    return bool(isatty and isatty())
+
+
+def _pick_adapter_tui(adapters: list[DetectedAdapter]) -> DetectedAdapter:
+    from textual.app import App, ComposeResult
+    from textual.binding import Binding
+    from textual.containers import Horizontal
+    from textual.widgets import Button, DataTable, Footer, Header, Static
+
+    class AdapterPickerApp(App[int | None]):
+        TITLE = "cyberm4fia-wifi"
+        SUB_TITLE = "pick wireless interface"
+        BINDINGS: ClassVar[list[Binding]] = [
+            Binding("enter", "start", "Start scan"),
+            Binding("q,escape", "cancel", "Cancel"),
+        ]
+        # No theme — let the terminal palette show through.
+        CSS = """
+        Screen { layout: vertical; }
+        #hint { height: 3; padding: 0 1; }
+        #adapter_dt { height: 1fr; }
+        #buttons { height: 3; align: right middle; padding: 0 1; }
+        #buttons Button { margin-left: 1; }
+        """
+
+        def __init__(self) -> None:
+            super().__init__()
+            self._chosen_idx: int = 0
+
+        def compose(self) -> ComposeResult:
+            yield Header(show_clock=False)
+            yield Static(
+                "Pick the wireless interface to scan with. ↑↓ to move, "
+                "Enter or [Start scan] to begin, q to cancel.",
+                id="hint",
+            )
+            table = DataTable[str](zebra_stripes=True, cursor_type="row", id="adapter_dt")
+            table.add_columns("Interface", "Chipset", "Driver", "Bands", "Injection")
+            yield table
+            with Horizontal(id="buttons"):
+                yield Button("Cancel", id="cancel_btn")
+                yield Button("Start scan", id="start_btn", variant="primary")
+            yield Footer()
+
+        def on_mount(self) -> None:
+            table = self.query_one("#adapter_dt", DataTable)
+            for idx, adapter in enumerate(adapters):
+                profile = adapter.profile
+                injection = "yes" if profile.injection else "no"
+                if profile.injection_unverified:
+                    injection = f"{injection}?"
+                table.add_row(
+                    Text(adapter.iface, style="cyan"),
+                    Text(profile.name),
+                    Text(profile.driver, style="dim"),
+                    Text("+".join(profile.bands), style="green"),
+                    Text(injection, style="yellow" if profile.injection_unverified else ""),
+                    key=str(idx),
+                )
+            table.focus()
+
+        def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+            with contextlib.suppress(TypeError, ValueError):
+                self._chosen_idx = int(str(event.row_key.value))
+
+        def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+            # Double-click / Enter on a row → treat as Start.
+            with contextlib.suppress(TypeError, ValueError):
+                self._chosen_idx = int(str(event.row_key.value))
+            self.action_start()
+
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            if event.button.id == "cancel_btn":
+                self.action_cancel()
+            elif event.button.id == "start_btn":
+                self.action_start()
+
+        def action_start(self) -> None:
+            if 0 <= self._chosen_idx < len(adapters):
+                self.exit(self._chosen_idx)
+
+        def action_cancel(self) -> None:
+            self.exit(None)
+
+    selected = AdapterPickerApp().run()
+    if selected is None:
+        raise click.ClickException("adapter selection cancelled")
+    return adapters[selected]
 
 
 class ScanPlugin(Plugin):
@@ -156,7 +251,6 @@ class ScanPlugin(Plugin):
             hopper=hopper,
             iface=mon_iface,
             driver=ctx.adapter.profile.driver,
-            mode=ctx.cli_args.get("mode") or _mode_label(ctx.gate),
         )
         try:
             app.run()
@@ -165,13 +259,6 @@ class ScanPlugin(Plugin):
             hopper.stop()
             adapter_mgr.restore()
         return 0
-
-
-def _mode_label(gate: Any) -> str:
-    try:
-        return gate.config.mode.value
-    except Exception:
-        return "?"
 
 
 # Public, eagerly-instantiated registry. Phase 2 swaps this for entry-points.

@@ -204,16 +204,30 @@ def _monitor_ifaces() -> list[str]:
     return [name for (name, kind) in _IW_DEV_BLOCK_RE.findall(res.stdout) if kind == "monitor"]
 
 
+def _set_nm_managed(iface: str, *, managed: bool) -> bool:
+    """Best-effort NetworkManager detach/restore for the selected interface."""
+    state = "yes" if managed else "no"
+    with contextlib.suppress(Exception):
+        res = _run(["nmcli", "device", "set", iface, "managed", state])
+        return res.returncode == 0
+    return False
+
+
 @dataclass(slots=True)
 class AdapterManager:
     iface: str
     profile: AdapterProfile
     monitor_iface: str | None = None
     _atexit_registered: bool = field(default=False, init=False, repr=False)
+    _nm_detached: bool = field(default=False, init=False, repr=False)
 
     def enter_monitor_mode(self) -> str:
+        self._nm_detached = _set_nm_managed(self.iface, managed=False)
         res = _run(["airmon-ng", "start", self.iface])
         if res.returncode != 0:
+            if self._nm_detached:
+                _set_nm_managed(self.iface, managed=True)
+                self._nm_detached = False
             raise AdapterError(
                 f"airmon-ng start {self.iface} failed (rc={res.returncode}): "
                 f"{(res.stderr or res.stdout).strip()}"
@@ -250,9 +264,15 @@ class AdapterManager:
 
     def restore(self) -> None:
         if self.monitor_iface is None:
+            if self._nm_detached:
+                _set_nm_managed(self.iface, managed=True)
+                self._nm_detached = False
             return
         _run(["airmon-ng", "stop", self.monitor_iface])
         self.monitor_iface = None
+        if self._nm_detached:
+            _set_nm_managed(self.iface, managed=True)
+            self._nm_detached = False
 
     # ---- atexit / context manager ------------------------------------------
 

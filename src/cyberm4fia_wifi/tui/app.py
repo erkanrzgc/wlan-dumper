@@ -2,27 +2,32 @@
 
 Layout (top to bottom):
 
-    Header (cyberm4fia-wifi · live 802.11 scan)
-    Status bar (2 lines + a help hint)
-    ┌─ 📡 Access Points (1fr) ──────────────────────────────────────────┐
-    │ BSSID  PWR  Signal  CH  Encryption  ESSID  Vendor  #B  #D  WPS    │
-    └───────────────────────────────────────────────────────────────────┘
-    ┌─ AP Details ─────┬─ Clients (n) ─────┬─ Live Events ──────────────┐
-    │ key/value pairs  │ STA list           │ rolling event log         │
-    └──────────────────┴───────────────────┴───────────────────────────┘
-    Footer: F2 Sort · F3 Filter · F4 Lock · F5 Pause · q Quit
+    Header (cyberm4fia-wifi)
+    Status bar (slim, two lines)
+    +------------------------------------------------------------------+
+    |  Access Points (full width)                                      |
+    +-------------------+-------------------+--------------------------+
+    |  AP Details       |  Clients          |  Logs                    |
+    +-------------------+-------------------+--------------------------+
+    Footer
+
+No custom colour theme: relies on the terminal's own palette. Only the
+event log uses the standard 16-colour ANSI tags ("red", "yellow", ...)
+that every terminal honours.
 """
 
 from __future__ import annotations
 
 import queue
 import time
-from typing import Any
+from contextlib import suppress
+from typing import Any, ClassVar
 
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal
+from textual.containers import Container, Horizontal, Vertical
+from textual.css.query import NoMatches
 from textual.widgets import DataTable, Footer, Header, Log, Static
 
 from cyberm4fia_wifi.core.events import (
@@ -44,24 +49,19 @@ _REFRESH_INTERVAL = 0.25
 _LOG_MAX_LINES = 500
 _SORT_COLUMNS = ("pwr", "ch", "essid", "beacon_count", "data_count")
 
-_ENC_STYLES = {
-    "OPEN": "bold red",
-    "WEP": "red",
-    "WPA-PSK": "orange1",
-    "WPA2-PSK": "yellow",
-    "WPA3-SAE": "bold green",
-    "WPA/WPA2-MIXED": "yellow italic",
-}
+# Per-AP cap on beacon log lines — beacons are 10/sec per AP and otherwise
+# flood the log faster than the eye can read.
+_BEACON_LOG_EVERY = 50
 
 
 def _signal_style(dbm: int) -> str:
     if dbm > -50:
-        return "bold green"
+        return "green"
     if dbm > -70:
         return "yellow"
     if dbm > -85:
-        return "orange1"
-    return "red"
+        return "red"
+    return "red dim"
 
 
 def _signal_bars(dbm: int) -> str:
@@ -90,74 +90,48 @@ class ScanApp(App[None]):
     TITLE = "cyberm4fia-wifi"
     SUB_TITLE = "live 802.11 scan"
 
+    # No background/color overrides — let the terminal palette win.
     CSS = """
-    Screen {
-        background: $surface;
-    }
+    Screen { layout: vertical; }
 
-    /* Status bar — terminal-style, slim, no heavy fill */
     #status_bar {
         height: 3;
         padding: 0 1;
-        background: $surface;
-        color: $text;
-        border-bottom: solid $primary 60%;
     }
 
-    /* AP panel — takes ~60% of the available space; no rounded borders */
     #ap_panel {
         height: 3fr;
-        border: solid $primary 60%;
+        border: solid white;
         padding: 0;
     }
 
-    /* Bottom split — takes ~40%, dominated by the Log panel */
     #bottom_split {
         height: 2fr;
     }
 
     #details_panel {
-        width: 36;
-        border: solid $warning 60%;
+        width: 1fr;
+        border: solid white;
         padding: 0 1;
     }
 
     #client_panel {
-        width: 40;
-        border: solid $accent 60%;
-        padding: 0;
-    }
-
-    /* Live Events takes everything that's left and uses a monospace,
-       full-width canvas so log lines breathe. */
-    #log_panel {
         width: 1fr;
-        border: solid $secondary 60%;
+        border: solid white;
         padding: 0;
     }
 
-    DataTable {
-        height: 1fr;
+    #log_panel {
+        width: 2fr;
+        border: solid white;
+        padding: 0;
     }
 
-    DataTable > .datatable--cursor {
-        background: $accent 60%;
-        color: $text;
-    }
-
-    Log {
-        background: $surface;
-        color: $text;
-        height: 1fr;
-        scrollbar-size-vertical: 1;
-        scrollbar-background: $surface;
-        scrollbar-color: $primary 40%;
-    }
+    DataTable { height: 1fr; }
+    Log { height: 1fr; }
     """
 
-    BINDINGS = [
-        # F1 is shown in the status bar hint, not the footer — keeps the
-        # action keys (F2..F5/q) front-and-centre at the bottom.
+    BINDINGS: ClassVar[list[Binding]] = [
         Binding("f1", "help", "Help", show=False),
         Binding("f2", "cycle_sort", "Sort"),
         Binding("f3", "filter_prompt", "Filter"),
@@ -176,7 +150,6 @@ class ScanApp(App[None]):
         hopper: ChannelHopper | None = None,
         iface: str = "?",
         driver: str = "?",
-        mode: str = "?",
     ) -> None:
         super().__init__()
         self._session = session
@@ -184,22 +157,23 @@ class ScanApp(App[None]):
         self._hopper = hopper
         self._iface = iface
         self._driver_name = driver
-        self._mode = mode
         self._sort_idx = 0
         self._filter: str = ""
         self._paused = False
         self._log_queue: queue.Queue[str] = queue.Queue()
         self._selected_bssid: str | None = None
         self._started_at = time.time()
+        self._known_bssids: set[str] = set()  # log gating: only-once new APs
 
     # ---- compose ------------------------------------------------------------
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         yield Static(self._format_status(), id="status_bar")
+
         ap_panel = Container(self._build_ap_table(), id="ap_panel")
-        ap_panel.border_title = "📡 Access Points"
-        ap_panel.border_subtitle = "↑↓ select · click row · F4 to lock channel"
+        ap_panel.border_title = "Access Points"
+        ap_panel.border_subtitle = "↑↓ select · click row · F4 lock channel"
         yield ap_panel
 
         details_panel = Container(Static("(select an AP)", id="details"), id="details_panel")
@@ -209,7 +183,7 @@ class ScanApp(App[None]):
         client_panel.border_title = "Clients"
 
         log_panel = Container(Log(highlight=False, id="log"), id="log_panel")
-        log_panel.border_title = "Live Events"
+        log_panel.border_title = "Logs"
 
         yield Horizontal(details_panel, client_panel, log_panel, id="bottom_split")
         yield Footer()
@@ -218,14 +192,14 @@ class ScanApp(App[None]):
         table = DataTable[Any](zebra_stripes=True, cursor_type="row", id="ap_dt")
         table.add_columns(
             "BSSID",
-            "PWR",
+            "Pwr",
             "Signal",
-            "CH",
+            "Ch",
             "Encryption",
             "ESSID",
             "Vendor",
-            "#Beacon",
-            "#Data",
+            "Beacon",
+            "Data",
             "WPS",
             "HS",
         )
@@ -233,7 +207,7 @@ class ScanApp(App[None]):
 
     def _build_client_panel(self) -> DataTable[Any]:
         table = DataTable[Any](zebra_stripes=True, cursor_type="row", id="client_dt")
-        table.add_columns("STATION", "Vendor", "PWR", "Signal", "FRAMES", "LAST")
+        table.add_columns("Station", "Vendor", "Pwr", "Signal", "Frames", "Last")
         return table
 
     # ---- lifecycle ----------------------------------------------------------
@@ -251,11 +225,12 @@ class ScanApp(App[None]):
     def _tick(self) -> None:
         if self._paused:
             return
-        self._refresh_ap_table()
-        self._refresh_client_panel()
-        self._refresh_details()
-        self._drain_log()
-        self._refresh_status()
+        with suppress(NoMatches):
+            self._refresh_ap_table()
+            self._refresh_client_panel()
+            self._refresh_details()
+            self._drain_log()
+            self._refresh_status()
 
     # ---- table refresh ------------------------------------------------------
 
@@ -267,21 +242,22 @@ class ScanApp(App[None]):
         if self._filter:
             f = self._filter.lower()
             rows = [
-                ap
-                for ap in rows
-                if f in ap.bssid.lower() or (ap.essid and f in ap.essid.lower())
+                ap for ap in rows if f in ap.bssid.lower() or (ap.essid and f in ap.essid.lower())
             ]
         sort_key = _SORT_COLUMNS[self._sort_idx % len(_SORT_COLUMNS)]
-        rows.sort(key=lambda ap: _sort_value(ap, sort_key), reverse=(sort_key in ("pwr", "beacon_count", "data_count")))
+        rows.sort(
+            key=lambda ap: _sort_value(ap, sort_key),
+            reverse=(sort_key in ("pwr", "beacon_count", "data_count")),
+        )
 
         table.clear()
         for ap in rows:
             essid_txt = Text(ap.essid) if ap.essid else Text("<hidden>", style="italic dim")
-            enc_style = _ENC_STYLES.get(ap.encryption, "white")
+            enc_style = _ENC_STYLES.get(ap.encryption, "")
             vendor = oui_for(ap.bssid) or "—"
-            wps_marker = Text("⚠", style="bold yellow") if ap.wps else Text("·", style="dim")
+            wps_marker = Text("WPS", style="yellow") if ap.wps else Text("·", style="dim")
             hs_marker = (
-                Text(f"✓{ap.handshake_count}", style="bold green")
+                Text(f"✓{ap.handshake_count}", style="green")
                 if ap.handshake_count
                 else Text("·", style="dim")
             )
@@ -289,53 +265,58 @@ class ScanApp(App[None]):
                 Text(ap.bssid, style="cyan"),
                 Text(f"{ap.signal_dbm:>4}", style=_signal_style(ap.signal_dbm)),
                 Text(_signal_bars(ap.signal_dbm), style=_signal_style(ap.signal_dbm)),
-                Text(str(ap.channel), style="bright_white"),
+                Text(str(ap.channel)),
                 Text(ap.encryption, style=enc_style),
                 essid_txt,
-                Text(vendor, style="dim white"),
+                Text(vendor, style="dim"),
                 Text(str(ap.beacon_count), style="dim"),
-                Text(str(ap.data_count), style="bold cyan" if ap.data_count else "dim"),
+                Text(str(ap.data_count), style="cyan" if ap.data_count else "dim"),
                 wps_marker,
                 hs_marker,
                 key=ap.bssid,
             )
         if previous and any(ap.bssid == previous for ap in rows):
-            try:
-                table.move_cursor(row=next(i for i, ap in enumerate(rows) if ap.bssid == previous))
-            except (ValueError, StopIteration):
-                pass
+            with suppress(ValueError, StopIteration):
+                target_row = next(
+                    i for i, row in enumerate(table.ordered_rows) if row.key.value == previous
+                )
+                table.move_cursor(row=target_row)
 
     def _refresh_client_panel(self) -> None:
         table = self.query_one("#client_dt", DataTable)
-        table.clear()
         panel = self.query_one("#client_panel", Container)
+        table.clear()
         if not self._selected_bssid:
             panel.border_title = "Clients"
             return
 
-        clients = self._session.clients_of(self._selected_bssid)
+        clients = sorted(
+            self._session.clients_of(self._selected_bssid),
+            key=lambda c: (c.last_seen, c.frames),
+            reverse=True,
+        )
         panel.border_title = f"Clients ({len(clients)})"
-
         for client in clients:
             vendor = oui_for(client.station)
-            vendor_text = (
-                Text(vendor, style="dim white")
-                if vendor
-                else Text("random?" if is_locally_administered(client.station) else "—", style="dim")
-            )
+            if vendor:
+                vendor_text = Text(vendor, style="dim")
+            elif is_locally_administered(client.station):
+                vendor_text = Text("random", style="dim")
+            else:
+                vendor_text = Text("—", style="dim")
             table.add_row(
                 Text(client.station, style="cyan"),
                 vendor_text,
                 Text(f"{client.signal_dbm:>4}", style=_signal_style(client.signal_dbm)),
                 Text(_signal_bars(client.signal_dbm), style=_signal_style(client.signal_dbm)),
-                Text(str(client.frames), style="bright_white"),
+                Text(str(client.frames)),
                 Text(_fmt_ts(client.last_seen), style="dim"),
             )
 
     def _refresh_details(self) -> None:
         widget = self.query_one("#details", Static)
         if not self._selected_bssid:
-            widget.update(Text("Use ↑↓ or click a row to inspect an AP.", style="dim"))
+            widget.update(Text("(select an AP — ↑↓ or click)", style="dim"))
             return
         ap = next(
             (a for a in self._session.aps_snapshot() if a.bssid == self._selected_bssid),
@@ -351,55 +332,60 @@ class ScanApp(App[None]):
         age = int(now - ap.last_seen)
         seen_for = int(ap.last_seen - ap.first_seen)
         vendor = oui_for(ap.bssid) or "(unknown OUI)"
-        wps = Text("yes ⚠", style="bold yellow") if ap.wps else Text("no", style="dim")
+        wps = Text("yes", style="yellow") if ap.wps else Text("no", style="dim")
         interval = (
-            Text(f"{ap.beacon_interval_ms} ms", style="white")
+            Text(f"{ap.beacon_interval_ms} ms")
             if ap.beacon_interval_ms
             else Text("—", style="dim")
         )
         return Text.assemble(
             ("ESSID    ", "dim"),
-            (ap.essid or "<hidden>", "bold yellow" if not ap.essid else "bold white"),
+            (ap.essid or "<hidden>", "yellow" if not ap.essid else "default"),
             "\n",
-            ("BSSID    ", "dim"), (ap.bssid, "cyan"), "  ", ("vendor ", "dim"), (vendor, "white"),
+            ("BSSID    ", "dim"),
+            (ap.bssid, "cyan"),
             "\n",
-            ("Band     ", "dim"), (_band_for(ap.channel), "green"), ("  ch ", "dim"),
-            (str(ap.channel), "bright_white"),
+            ("Vendor   ", "dim"),
+            (vendor, ""),
+            "\n",
+            ("Band     ", "dim"),
+            (_band_for(ap.channel), "green"),
+            ("  ch ", "dim"),
+            (str(ap.channel), ""),
             "\n",
             ("Crypto   ", "dim"),
-            (ap.encryption, _ENC_STYLES.get(ap.encryption, "white")),
+            (ap.encryption, _ENC_STYLES.get(ap.encryption, "")),
             "\n",
             ("Signal   ", "dim"),
             (f"{ap.signal_dbm} dBm  ", _signal_style(ap.signal_dbm)),
             (_signal_bars(ap.signal_dbm), _signal_style(ap.signal_dbm)),
             "\n",
-            ("Beacons  ", "dim"), (f"{ap.beacon_count}  ", "white"),
-            ("interval ", "dim"), interval,
+            ("Beacons  ", "dim"),
+            (f"{ap.beacon_count}  ", ""),
+            ("interval ", "dim"),
+            interval,
             "\n",
             ("Data     ", "dim"),
-            (str(ap.data_count), "bold cyan" if ap.data_count else "dim"),
-            ("  frames seen via this AP", "dim"),
+            (str(ap.data_count), "cyan" if ap.data_count else "dim"),
             "\n",
-            ("WPS      ", "dim"), wps,
+            ("WPS      ", "dim"),
+            wps,
             "\n",
             ("MFP      ", "dim"),
             (
                 ap.mfp_status,
-                "bold red" if ap.mfp_status == "required"
-                else "yellow" if ap.mfp_status == "capable"
+                "red"
+                if ap.mfp_status == "required"
+                else "yellow"
+                if ap.mfp_status == "capable"
                 else "dim",
             ),
             "\n",
-            ("Handshakes ", "dim"),
-            (
-                str(ap.handshake_count),
-                "bold green" if ap.handshake_count else "dim",
-            ),
+            ("Hands.   ", "dim"),
+            (str(ap.handshake_count), "green" if ap.handshake_count else "dim"),
             "\n",
             ("Seen     ", "dim"),
-            (f"{seen_for}s span", "white"),
-            ("  ·  last ", "dim"),
-            (f"{age}s ago" if age else "now", "white"),
+            (f"{seen_for}s span · last {age}s ago" if age else f"{seen_for}s span · now", ""),
         )
 
     def _refresh_status(self) -> None:
@@ -423,62 +409,84 @@ class ScanApp(App[None]):
         uptime = int(time.time() - self._started_at)
 
         line1 = Text.assemble(
-            ("iface ", "dim"), (self._iface, "bold cyan"),
-            ("  ·  driver ", "dim"), (self._driver_name, "bold white"),
-            ("  ·  CH ", "dim"), (ch_label, "bold yellow"),
-            ("  ·  uptime ", "dim"), (f"{uptime}s", "white"),
-            ("    PAUSED", "bold red on yellow") if self._paused else ("", ""),
+            ("iface ", "dim"), (self._iface, "cyan"),
+            ("  driver ", "dim"), (self._driver_name, ""),
+            ("  CH ", "dim"), (ch_label, "yellow"),
+            ("  uptime ", "dim"), (f"{uptime}s", ""),
+            ("    PAUSED", "red") if self._paused else ("", ""),
         )
         line2 = Text.assemble(
-            ("APs ", "dim"), (f"{ap_count}", "bold green"),
-            ("  ·  2.4 GHz ", "dim"), (str(c24), "green"),
-            ("  ·  5 GHz ", "dim"), (str(c5), "green"),
-            ("  ·  WPS ", "dim"),
-            (str(wps_count), "bold yellow" if wps_count else "dim"),
-            ("  ·  clients ", "dim"), (str(clients_total), "bold cyan"),
-            ("  ·  filter ", "dim"),
-            (f'"{self._filter}"' if self._filter else "<none>",
+            ("APs ", "dim"), (f"{ap_count}", "green"),
+            ("  2.4 ", "dim"), (str(c24), "green"),
+            ("  5 ", "dim"), (str(c5), "green"),
+            ("  WPS ", "dim"), (str(wps_count), "yellow" if wps_count else "dim"),
+            ("  clients ", "dim"), (str(clients_total), "cyan"),
+            ("  filter ", "dim"),
+            (f'"{self._filter}"' if self._filter else "—",
              "yellow" if self._filter else "dim"),
         )
-        line3 = Text(
-            "press F1 for help · F2 cycle sort · F3 filter · F4 lock channel · F5 pause",
-            style="dim italic",
-        )
-        return Text.assemble(line1, "\n", line2, "\n", line3)
+        return Text.assemble(line1, "\n", line2)
 
     # ---- log buffering ------------------------------------------------------
 
     def _log_event(self, evt: Event) -> None:
-        if isinstance(evt, BeaconSeen):
-            tag = "WPS " if evt.wps else "    "
-            line = (
-                f"[beacon] {evt.bssid} ch{evt.channel:>3} {evt.signal_dbm:>4}dBm "
-                f"{evt.encryption:14s}{tag}{evt.essid or '<hidden>'}"
-            )
-        elif isinstance(evt, ProbeSeen):
-            line = f"[probe ] {evt.station} → {evt.essid or '<any>'} {evt.signal_dbm:>4}dBm"
-        elif isinstance(evt, ClientSeen):
-            line = f"[client] {evt.station} on {evt.bssid} {evt.signal_dbm:>4}dBm"
-        elif isinstance(evt, ChannelChanged):
-            line = f"[chan  ] hop → {evt.channel}"
-        elif isinstance(evt, DeauthSent):
-            who = evt.target_station or "broadcast"
-            line = (
-                f"[deauth] → {who} ({evt.sequence}/{evt.total}) "
-                f"src={evt.target_bssid}"
-            )
-        elif isinstance(evt, EAPOLCapture):
-            mi = evt.message_index if evt.message_index is not None else "?"
-            line = f"[eapol ] M{mi}/4  {evt.bssid} ↔ {evt.station}"
-        elif isinstance(evt, HandshakeComplete):
-            verdict = "valid" if evt.valid_by_hcxtool else "partial"
-            line = f"[handshake] {verdict} → {evt.pcap_path}"
-        else:
-            line = type(evt).__name__
-        try:
+        line = self._format_log_line(evt)
+        if line is None:
+            return
+        with suppress(queue.Full):
             self._log_queue.put_nowait(line)
-        except queue.Full:
-            pass
+
+    def _format_log_line(self, evt: Event) -> str | None:
+        stamp = _fmt_ts(evt.timestamp)
+        if isinstance(evt, BeaconSeen):
+            # Only log new APs + every Nth beacon for known ones, otherwise
+            # the panel is unreadable (~10 beacons/sec/AP).
+            if evt.bssid in self._known_bssids:
+                ap = next(
+                    (a for a in self._session.aps_snapshot()
+                     if a.bssid.lower() == evt.bssid.lower()),
+                    None,
+                )
+                if ap is None or ap.beacon_count % _BEACON_LOG_EVERY != 0:
+                    return None
+            self._known_bssids.add(evt.bssid)
+            tag = "AP+" if evt.bssid not in self._known_bssids else "AP "
+            tag = "AP+"
+            return (
+                f"{stamp}  {tag}  {evt.bssid}  ch{evt.channel:>3}  "
+                f"{evt.signal_dbm:>4}dBm  {evt.encryption:<14} {evt.essid or '<hidden>'}"
+            )
+        if isinstance(evt, ProbeSeen):
+            return None  # too noisy by default; future F-key to enable
+        if isinstance(evt, ClientSeen):
+            ap_label = self._ap_label(evt.bssid)
+            return (
+                f"{stamp}  STA   {evt.station}  on {_clip(ap_label, 20)}  "
+                f"{evt.signal_dbm:>4}dBm"
+            )
+        if isinstance(evt, ChannelChanged):
+            return None  # silent hop — channel is shown in status bar
+        if isinstance(evt, DeauthSent):
+            who = evt.target_station or "broadcast"
+            return (
+                f"{stamp}  DEAUTH  {evt.sequence:>2}/{evt.total:<2}  "
+                f"-> {who}  ap {evt.target_bssid}"
+            )
+        if isinstance(evt, EAPOLCapture):
+            mi = evt.message_index if evt.message_index is not None else "?"
+            return f"{stamp}  EAPOL   M{mi}/4  {evt.station} <-> {evt.bssid}"
+        if isinstance(evt, HandshakeComplete):
+            verdict = "VALID" if evt.valid_by_hcxtool else "PARTIAL"
+            artifact = evt.hashcat_path or evt.pcap_path
+            return f"{stamp}  HS     {verdict}  {evt.bssid}  -> {artifact}"
+        return f"{stamp}  EVENT   {type(evt).__name__}"
+
+    def _ap_label(self, bssid: str) -> str:
+        needle = bssid.lower()
+        for ap in self._session.aps_snapshot():
+            if ap.bssid.lower() == needle:
+                return ap.essid or "<hidden>"
+        return bssid
 
     def _drain_log(self) -> None:
         log = self.query_one("#log", Log)
@@ -497,6 +505,13 @@ class ScanApp(App[None]):
         if event.data_table.id == "ap_dt":
             key = event.row_key.value
             self._selected_bssid = str(key) if key is not None else None
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        if event.data_table.id == "ap_dt":
+            key = event.row_key.value
+            self._selected_bssid = str(key) if key is not None else None
+            self._refresh_client_panel()
+            self._refresh_details()
 
     # ---- actions ------------------------------------------------------------
 
@@ -537,14 +552,11 @@ class ScanApp(App[None]):
 
     def action_help(self) -> None:
         self.notify(
-            "F2 sort · F3 filter · F4 lock channel · F5 pause · "
-            "d/h attack · q quit",
+            "F2 sort · F3 filter · F4 lock channel · F5 pause · d/h attack · q quit",
             timeout=10,
         )
 
     def action_handshake_prompt(self) -> None:
-        """Open the handshake modal. Uses the callback form of push_screen
-        because action handlers run on the UI thread, not a worker."""
         if not self._selected_bssid:
             self.notify("select an AP first", severity="warning")
             return
@@ -554,10 +566,9 @@ class ScanApp(App[None]):
         )
         if ap is None:
             return
-        from cyberm4fia_wifi.tui.modals import HandshakeModal  # noqa: PLC0415
+        from cyberm4fia_wifi.tui.modals import HandshakeModal
 
         clients = [c.station for c in self._session.clients_of(ap.bssid)]
-        # Snapshot AP so the closure below doesn't race the snapshot list.
         captured = ap
 
         def on_dismissed(req) -> None:
@@ -580,7 +591,7 @@ class ScanApp(App[None]):
         )
 
     def _launch_handshake_worker(self, ap: APRecord, req: Any) -> None:
-        from cyberm4fia_wifi.plugins.handshake import HandshakePlugin  # noqa: PLC0415
+        from cyberm4fia_wifi.plugins.handshake import HandshakePlugin
 
         plugin = HandshakePlugin()
         self.notify(
@@ -606,14 +617,24 @@ class ScanApp(App[None]):
 
     def action_deauth_prompt(self) -> None:
         self.notify(
-            "'d' alone is reserved. Use 'h' — the modal has an 'Auto-deauth' "
-            "toggle and the live events show every frame as it goes out.",
+            "'d' alone is reserved. Use 'h' — the handshake modal has an "
+            "Auto-deauth toggle; the log shows every frame as it goes out.",
             timeout=8,
         )
 
 
+_ENC_STYLES = {
+    "OPEN": "red",
+    "WEP": "red",
+    "WPA-PSK": "yellow",
+    "WPA2-PSK": "yellow",
+    "WPA3-SAE": "green",
+    "WPA/WPA2-MIXED": "yellow",
+}
+
+
 def _resolve_gate():
-    from cyberm4fia_wifi.core.auth import AuthorizationGate  # noqa: PLC0415
+    from cyberm4fia_wifi.core.auth import AuthorizationGate
 
     return AuthorizationGate.from_xdg()
 
@@ -634,3 +655,11 @@ def _sort_value(ap: Any, column: str) -> Any:
 
 def _fmt_ts(ts: float) -> str:
     return time.strftime("%H:%M:%S", time.localtime(ts))
+
+
+def _clip(value: str, width: int) -> str:
+    if len(value) <= width:
+        return value
+    if width <= 1:
+        return value[:width]
+    return f"{value[: width - 1]}…"

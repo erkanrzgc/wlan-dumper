@@ -184,6 +184,7 @@ class TestAdapterManager:
 
         assert mon_iface == "wlan0mon"
         argv_set = [tuple(call) for call in fake_subprocess.calls]
+        assert ("nmcli", "device", "set", "wlan0", "managed", "no") in argv_set
         assert ("airmon-ng", "start", "wlan0") in argv_set
 
     def test_enter_monitor_mode_when_driver_keeps_name(
@@ -226,4 +227,22 @@ class TestAdapterManager:
         mgr.restore()
 
         argvs = [tuple(call) for call in fake_subprocess.calls]
+        assert ("nmcli", "device", "set", "wlan0", "managed", "no") in argvs
         assert ("airmon-ng", "stop", "wlan0mon") in argvs
+        assert ("nmcli", "device", "set", "wlan0", "managed", "yes") in argvs
+
+    def test_failed_monitor_mode_restores_networkmanager(
+        self, fake_subprocess: FakeSubprocess
+    ) -> None:
+        profile = ADAPTERS[(0x0CF3, 0x9271)]
+        fake_subprocess.plan[("airmon-ng", "start", "wlan0")] = FakeRun(
+            stdout="", stderr="device busy", returncode=1
+        )
+
+        mgr = AdapterManager(iface="wlan0", profile=profile)
+        with pytest.raises(AdapterError):
+            mgr.enter_monitor_mode()
+
+        argvs = [tuple(call) for call in fake_subprocess.calls]
+        assert ("nmcli", "device", "set", "wlan0", "managed", "no") in argvs
+        assert ("nmcli", "device", "set", "wlan0", "managed", "yes") in argvs
