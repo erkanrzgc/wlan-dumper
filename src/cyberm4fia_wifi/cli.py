@@ -98,7 +98,9 @@ def build_runtime_for(ctx: click.Context) -> Runtime:
     adapters = detect_adapters()
     from cyberm4fia_wifi.plugins.scan import pick_adapter  # local import: avoid cycle
 
-    adapter = pick_adapter(adapters, preferred_iface=preferred if isinstance(preferred, str) else None)
+    adapter = pick_adapter(
+        adapters, preferred_iface=preferred if isinstance(preferred, str) else None
+    )
     return Runtime(
         session=Session(),
         bus=EventBus(),

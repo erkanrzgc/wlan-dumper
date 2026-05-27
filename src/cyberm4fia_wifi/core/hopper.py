@@ -14,7 +14,7 @@ Two behaviors worth knowing:
   (useful when the operator wants to capture handshakes for a specific AP);
   ``unlock()`` resumes round-robin.
 
-The default channel sets are intentionally conservative — 2.4 GHz 1–13 and a
+The default channel sets are intentionally conservative - 2.4 GHz 1-13 and a
 common subset of non-DFS 5 GHz channels. ``parse_iw_list_channels`` extracts
 the radio-permitted set from ``iw list`` output so the hopper can intersect
 with the active regulatory domain when the operator chooses to.
@@ -38,7 +38,7 @@ class HopperError(Exception):
 
 
 DEFAULT_2GHZ_CHANNELS: tuple[int, ...] = tuple(range(1, 14))
-# Common non-DFS 5 GHz channels; DFS channels (52–144) are allowed for passive
+# Common non-DFS 5 GHz channels; DFS channels (52-144) are allowed for passive
 # scan in most regdomains but we keep the default conservative.
 DEFAULT_5GHZ_CHANNELS: tuple[int, ...] = (36, 40, 44, 48, 149, 153, 157, 161, 165)
 
@@ -47,7 +47,7 @@ def _iw_set_channel(iface: str) -> Callable[[int], None]:
     """Return a channel setter that shells out to ``iw dev <iface> set channel``."""
 
     def setter(channel: int) -> None:
-        res = subprocess.run(  # noqa: S603 — argv is fully controlled
+        res = subprocess.run(
             ["iw", "dev", iface, "set", "channel", str(channel)],
             check=False,
             capture_output=True,
@@ -126,8 +126,7 @@ class ChannelHopper:
             chans = [c for c in chans if c in regdom_channels]
         if not chans:
             raise HopperError(
-                f"no channels left after band filter (bands={bands}, "
-                f"regdom={regdom_channels})"
+                f"no channels left after band filter (bands={bands}, regdom={regdom_channels})"
             )
         return cls(
             iface=iface,
@@ -143,9 +142,7 @@ class ChannelHopper:
         if self._thread and self._thread.is_alive():
             return
         self._stop.clear()
-        self._thread = threading.Thread(
-            target=self._run, name="cyberm4fia-hopper", daemon=True
-        )
+        self._thread = threading.Thread(target=self._run, name="cyberm4fia-hopper", daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
@@ -201,4 +198,4 @@ class ChannelHopper:
 
 
 # Keep a stub for the unused subprocess import linter check.
-_ = Any  # noqa: F841 — retained so future code can lean on Any without a re-import
+_ = Any

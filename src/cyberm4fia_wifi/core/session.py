@@ -95,9 +95,9 @@ class Session:
 
     def attach(self, bus: EventBus) -> None:
         """Subscribe to the event types this session cares about."""
-        bus.subscribe(BeaconSeen, self.handle_event)  # type: ignore[arg-type]
-        bus.subscribe(ClientSeen, self.handle_event)  # type: ignore[arg-type]
-        bus.subscribe(ChannelChanged, self.handle_event)  # type: ignore[arg-type]
+        bus.subscribe(BeaconSeen, self.handle_event)
+        bus.subscribe(ClientSeen, self.handle_event)
+        bus.subscribe(ChannelChanged, self.handle_event)
 
     # ---- persistence --------------------------------------------------------
 
@@ -175,5 +175,5 @@ class Session:
 
 def _filter_kwargs(raw: dict[str, Any], cls: type) -> dict[str, Any]:
     """Drop keys that aren't fields of ``cls`` so unknown JSON keys load cleanly."""
-    valid: Iterable[str] = {f for f in cls.__dataclass_fields__}  # type: ignore[attr-defined]
+    valid: Iterable[str] = set(cls.__dataclass_fields__)  # type: ignore[attr-defined]
     return {k: v for k, v in raw.items() if k in valid}

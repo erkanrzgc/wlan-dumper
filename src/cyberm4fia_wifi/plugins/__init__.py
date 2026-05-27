@@ -7,4 +7,4 @@ discovery so external packages can ship plugins.
 from cyberm4fia_wifi.plugins.base import Plugin, PluginContext
 from cyberm4fia_wifi.plugins.scan import REGISTRY, ScanPlugin
 
-__all__ = ["Plugin", "PluginContext", "REGISTRY", "ScanPlugin"]
+__all__ = ["REGISTRY", "Plugin", "PluginContext", "ScanPlugin"]

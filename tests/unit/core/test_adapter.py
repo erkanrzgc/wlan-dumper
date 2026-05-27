@@ -127,9 +127,7 @@ class TestDetectAdapters:
         ifaces = sorted(a.iface for a in found)
         assert ifaces == ["wlan0", "wlan1"]
 
-    def test_unknown_vendor_returns_generic_profile(
-        self, fake_subprocess: FakeSubprocess
-    ) -> None:
+    def test_unknown_vendor_returns_generic_profile(self, fake_subprocess: FakeSubprocess) -> None:
         fake_subprocess.plan.update(
             {
                 ("iw", "dev"): FakeRun(

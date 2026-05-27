@@ -114,8 +114,8 @@ class EventBus:
     def unsubscribe(self, event_type: type[E], handler: Handler[E]) -> None:
         with self._lock:
             handlers = self._handlers.get(event_type, [])
-            if handler in handlers:  # type: ignore[operator]
-                handlers.remove(handler)  # type: ignore[arg-type]
+            if handler in handlers:
+                handlers.remove(handler)
 
     def publish(self, event: Event) -> list[BaseException]:
         with self._lock:
@@ -125,7 +125,7 @@ class EventBus:
         for h in handlers:
             try:
                 h(event)
-            except BaseException as exc:  # noqa: BLE001 — error isolation is the point
+            except BaseException as exc:
                 errors.append(exc)
         return errors
 

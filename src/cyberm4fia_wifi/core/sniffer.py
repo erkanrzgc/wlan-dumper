@@ -18,8 +18,8 @@ OUI 00:50:F2). The cipher labels follow what airodump-ng prints
 
 from __future__ import annotations
 
+import contextlib
 import time
-from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -37,7 +37,7 @@ from cyberm4fia_wifi.core.events import (
 
 
 def _scapy() -> Any:
-    import scapy.all  # noqa: PLC0415 — lazy import on purpose
+    import scapy.all
 
     return scapy.all
 
@@ -45,7 +45,7 @@ def _scapy() -> Any:
 def _signal_from_radiotap(pkt: Any) -> int:
     """Read dBm signal from RadioTap if present, else default to 0."""
     try:
-        RadioTap = _scapy().RadioTap  # noqa: N806
+        RadioTap = _scapy().RadioTap
     except AttributeError:
         return 0
     if pkt.haslayer(RadioTap):
@@ -65,7 +65,7 @@ def _extract_essid(elt: Any) -> str | None:
                 return None
             try:
                 return info.decode("utf-8", errors="replace")
-            except Exception:  # noqa: BLE001
+            except Exception:
                 return info.decode("latin-1", errors="replace")
         elt = getattr(elt, "payload", None) if elt is not None else None
     return None
@@ -89,9 +89,9 @@ def _extract_encryption(pkt: Any) -> str:
     sae = False
 
     try:
-        Dot11Elt = _scapy().Dot11Elt  # noqa: N806
-        Dot11EltVendorSpecific = _scapy().Dot11EltVendorSpecific  # noqa: N806
-        Dot11EltRSN = getattr(_scapy(), "Dot11EltRSN", None)  # noqa: N806
+        Dot11Elt = _scapy().Dot11Elt
+        Dot11EltVendorSpecific = _scapy().Dot11EltVendorSpecific
+        Dot11EltRSN = getattr(_scapy(), "Dot11EltRSN", None)
     except AttributeError:
         return "OPEN"
 
@@ -127,11 +127,11 @@ def _extract_encryption(pkt: Any) -> str:
 def dissect_packet(pkt: Any, *, now: float | None = None) -> list[Event]:
     """Convert a single 802.11 frame into zero or more events."""
     s = _scapy()
-    Dot11 = s.Dot11  # noqa: N806
-    Dot11Beacon = s.Dot11Beacon  # noqa: N806
-    Dot11Elt = s.Dot11Elt  # noqa: N806
-    Dot11ProbeReq = s.Dot11ProbeReq  # noqa: N806
-    Dot11ProbeResp = getattr(s, "Dot11ProbeResp", None)  # noqa: N806
+    Dot11 = s.Dot11
+    Dot11Beacon = s.Dot11Beacon
+    Dot11Elt = s.Dot11Elt
+    Dot11ProbeReq = s.Dot11ProbeReq
+    Dot11ProbeResp = getattr(s, "Dot11ProbeResp", None)
 
     if not pkt.haslayer(Dot11):
         return []
@@ -198,18 +198,18 @@ def dissect_packet(pkt: Any, *, now: float | None = None) -> list[Event]:
         addr3 = (dot11.addr3 or "").lower()
         # Heuristic: in to-DS frames addr1=BSSID, addr2=client; in from-DS
         # frames addr1=client, addr2=BSSID. addr3 is the other endpoint.
-        bssid: str = ""
+        data_bssid = ""
         client = ""
         if not _is_broadcast(addr1) and not _is_broadcast(addr2):
             # Without parsing FCfield.ToDS/FromDS we pick the safer pair: addr3
             # is always either BSSID or remote endpoint; treat addr2 as station.
-            bssid = addr3 or addr1
+            data_bssid = addr3 or addr1
             client = addr2
-        if bssid and client:
+        if data_bssid and client:
             out.append(
                 ClientSeen(
                     timestamp=ts,
-                    bssid=bssid,
+                    bssid=data_bssid,
                     station=client,
                     signal_dbm=_signal_from_radiotap(pkt),
                 )
@@ -246,8 +246,6 @@ class Sniffer:
 
     def stop(self) -> None:
         if self._async_sniffer is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self._async_sniffer.stop()
-            except Exception:  # noqa: BLE001 — best effort
-                pass
             self._async_sniffer = None

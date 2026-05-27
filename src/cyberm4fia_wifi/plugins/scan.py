@@ -16,11 +16,9 @@ from typing import Any
 
 import click
 
-from cyberm4fia_wifi.core.adapter import AdapterManager, DetectedAdapter, detect_adapters
+from cyberm4fia_wifi.core.adapter import AdapterManager, DetectedAdapter
 from cyberm4fia_wifi.core.auth import PluginRisk
-from cyberm4fia_wifi.core.events import EventBus
 from cyberm4fia_wifi.core.hopper import ChannelHopper
-from cyberm4fia_wifi.core.session import Session
 from cyberm4fia_wifi.core.sniffer import Sniffer
 from cyberm4fia_wifi.plugins.base import Plugin, PluginContext
 from cyberm4fia_wifi.tui.app import ScanApp
@@ -76,7 +74,7 @@ class ScanPlugin(Plugin):
         adapter_mgr = AdapterManager(iface=ctx.adapter.iface, profile=ctx.adapter.profile)
         try:
             mon_iface = adapter_mgr.enter_monitor_mode()
-        except Exception as exc:  # noqa: BLE001 — surface as a clean CLI error
+        except Exception as exc:
             raise click.ClickException(f"could not enter monitor mode: {exc}") from exc
 
         # Wire bus -> session.
@@ -114,7 +112,7 @@ class ScanPlugin(Plugin):
 def _mode_label(gate: Any) -> str:
     try:
         return gate.config.mode.value
-    except Exception:  # noqa: BLE001 — pre-acknowledgment runs
+    except Exception:
         return "?"
 
 

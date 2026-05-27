@@ -12,6 +12,7 @@ import pytest
 scapy = pytest.importorskip("scapy.all")
 
 from scapy.all import (  # noqa: E402
+    AKMSuite,
     Dot11,
     Dot11Beacon,
     Dot11Elt,
@@ -20,7 +21,6 @@ from scapy.all import (  # noqa: E402
     Dot11ProbeResp,
     RadioTap,
     RSNCipherSuite,
-    AKMSuite,
 )
 
 from cyberm4fia_wifi.core.events import BeaconSeen, ClientSeen, ProbeSeen  # noqa: E402
@@ -188,7 +188,7 @@ class TestDataFrameDissection:
 
 class TestNonDot11:
     def test_non_dot11_returns_empty(self) -> None:
-        from scapy.all import Ether, IP
+        from scapy.all import IP, Ether
 
         pkt = Ether() / IP(dst="1.1.1.1")
         assert dissect_packet(pkt, now=100.0) == []

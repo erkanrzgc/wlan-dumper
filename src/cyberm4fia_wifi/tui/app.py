@@ -16,9 +16,10 @@ tick.
 
 from __future__ import annotations
 
+import contextlib
 import queue
 import time
-from typing import Any
+from typing import Any, ClassVar
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -52,7 +53,7 @@ class ScanApp(App[None]):
     #log_panel { height: 1fr; }
     """
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[Binding]] = [
         Binding("f1", "help", "Help"),
         Binding("f2", "cycle_sort", "Sort"),
         Binding("f3", "filter_prompt", "Filter"),
@@ -131,9 +132,7 @@ class ScanApp(App[None]):
         if self._filter:
             f = self._filter.lower()
             rows = [
-                ap
-                for ap in rows
-                if f in (ap.bssid.lower()) or (ap.essid and f in ap.essid.lower())
+                ap for ap in rows if f in (ap.bssid.lower()) or (ap.essid and f in ap.essid.lower())
             ]
         sort_key = _SORT_COLUMNS[self._sort_idx % len(_SORT_COLUMNS)]
         rows.sort(key=lambda ap: _sort_value(ap, sort_key), reverse=(sort_key == "pwr"))
@@ -151,10 +150,8 @@ class ScanApp(App[None]):
                 key=ap.bssid,
             )
         if previous and any(ap.bssid == previous for ap in rows):
-            try:
+            with contextlib.suppress(ValueError, StopIteration):
                 table.move_cursor(row=next(i for i, ap in enumerate(rows) if ap.bssid == previous))
-            except (ValueError, StopIteration):
-                pass
 
     def _refresh_client_panel(self) -> None:
         table = self.query_one("#client_dt", DataTable)
@@ -176,8 +173,10 @@ class ScanApp(App[None]):
 
     def _format_status(self) -> str:
         ch = self._session.active_channel
-        ch_label = f"locked={ch}" if (self._hopper and self._hopper._locked_channel) else (
-            f"{ch}" if ch is not None else "—"
+        ch_label = (
+            f"locked={ch}"
+            if (self._hopper and self._hopper._locked_channel)
+            else (f"{ch}" if ch is not None else "—")
         )
         return (
             f"iface: {self._iface}  driver: {self._driver_name}  "
@@ -191,8 +190,7 @@ class ScanApp(App[None]):
         """Subscriber: format an event and enqueue it. Runs on sniffer thread."""
         if isinstance(evt, BeaconSeen):
             line = (
-                f"beacon {evt.bssid} ch{evt.channel} "
-                f"{evt.signal_dbm}dBm {evt.essid or '<hidden>'}"
+                f"beacon {evt.bssid} ch{evt.channel} {evt.signal_dbm}dBm {evt.essid or '<hidden>'}"
             )
         elif isinstance(evt, ProbeSeen):
             line = f"probe  {evt.station} -> {evt.essid or '<any>'} {evt.signal_dbm}dBm"
@@ -202,10 +200,8 @@ class ScanApp(App[None]):
             line = f"chan   {evt.channel}"
         else:
             line = type(evt).__name__
-        try:
+        with contextlib.suppress(queue.Full):
             self._log_queue.put_nowait(line)
-        except queue.Full:
-            pass
 
     def _drain_log(self) -> None:
         log = self.query_one("#log", Log)

@@ -26,21 +26,21 @@ from __future__ import annotations
 import datetime as dt
 import os
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import IO
 
 import yaml
 
 
-class Mode(str, Enum):
+class Mode(StrEnum):
     LAB = "lab"
     PENTEST = "pentest"
     CTF = "ctf"
     GENERAL = "general"
 
 
-class PluginRisk(str, Enum):
+class PluginRisk(StrEnum):
     PASSIVE = "passive"
     ACTIVE = "active"
     HIGH = "high"
@@ -107,9 +107,7 @@ class AuthorizationGate:
     @classmethod
     def from_xdg(cls) -> AuthorizationGate:
         config_home = Path(os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config"))
-        data_home = Path(
-            os.environ.get("XDG_DATA_HOME") or (Path.home() / ".local" / "share")
-        )
+        data_home = Path(os.environ.get("XDG_DATA_HOME") or (Path.home() / ".local" / "share"))
         return cls(
             config_path=config_home / "cyberm4fia" / "authz.yaml",
             audit_path=data_home / "cyberm4fia" / "audit.log",
@@ -179,18 +177,15 @@ class AuthorizationGate:
         if risk is PluginRisk.HIGH and not reason:
             raise AuthzError(
                 f"plugin {plugin!r} has risk=high; "
-                "pass --i-am-authorized-to-do-this \"<reason>\" to proceed"
+                'pass --i-am-authorized-to-do-this "<reason>" to proceed'
             )
 
         if cfg.mode is Mode.PENTEST:
             if target is None:
-                raise AuthzError(
-                    f"plugin {plugin!r} requires a --target BSSID in pentest mode"
-                )
+                raise AuthzError(f"plugin {plugin!r} requires a --target BSSID in pentest mode")
             if target not in cfg.whitelist_bssids:
                 raise AuthzError(
-                    f"target {target} is not in the pentest whitelist "
-                    f"({cfg.whitelist_bssids})"
+                    f"target {target} is not in the pentest whitelist ({cfg.whitelist_bssids})"
                 )
         elif cfg.mode is Mode.GENERAL:
             if target is None:

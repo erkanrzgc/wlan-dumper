@@ -20,6 +20,7 @@ patch them with a single ``monkeypatch.setattr`` and never touch the real
 from __future__ import annotations
 
 import atexit
+import contextlib
 import re
 import subprocess
 from dataclasses import dataclass, field
@@ -129,16 +130,12 @@ def detect_adapters() -> list[DetectedAdapter]:
         ids = _vendor_product_for(iface)
         if ids is None:
             # Couldn't read USB IDs (perhaps a non-USB radio); use generic profile.
-            found.append(
-                DetectedAdapter(iface=iface, profile=_GENERIC, vendor_id=0, product_id=0)
-            )
+            found.append(DetectedAdapter(iface=iface, profile=_GENERIC, vendor_id=0, product_id=0))
             continue
         vendor, product = ids
         profile = ADAPTERS.get((vendor, product), _GENERIC)
         found.append(
-            DetectedAdapter(
-                iface=iface, profile=profile, vendor_id=vendor, product_id=product
-            )
+            DetectedAdapter(iface=iface, profile=profile, vendor_id=vendor, product_id=product)
         )
     return found
 
@@ -166,11 +163,9 @@ class AdapterManager:
                 f"{(res.stderr or res.stdout).strip()}"
             )
         m = _AIRMON_NEW_IFACE_RE.search(res.stdout or "")
-        if m:
-            mon_iface = m.group(2)
-        else:
-            # Heuristic fallback: many drivers append "mon" to the iface name.
-            mon_iface = f"{self.iface}mon"
+        # Heuristic fallback if airmon-ng's output format changes: many drivers
+        # just append "mon" to the original iface name.
+        mon_iface = m.group(2) if m else f"{self.iface}mon"
         self.monitor_iface = mon_iface
         if not self._atexit_registered:
             atexit.register(self._atexit_restore)
@@ -185,11 +180,9 @@ class AdapterManager:
 
     # ---- atexit / context manager ------------------------------------------
 
-    def _atexit_restore(self) -> None:  # pragma: no cover — atexit path
-        try:
+    def _atexit_restore(self) -> None:  # pragma: no cover - atexit path
+        with contextlib.suppress(Exception):
             self.restore()
-        except Exception:  # noqa: BLE001 — best-effort cleanup
-            pass
 
     def __enter__(self) -> str:
         return self.enter_monitor_mode()
