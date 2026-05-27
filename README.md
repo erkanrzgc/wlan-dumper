@@ -19,6 +19,35 @@ See [`docs/superpowers/specs/2026-05-27-cyberm4fia-wifi-design.md`](docs/superpo
 
 ---
 
+## TL;DR — just run it
+
+There are two files at the top of the repo you actually launch:
+
+| File | What it does |
+|------|--------------|
+| `run.py` | Python entry point. `python3 run.py adapters` or `python3 run.py scan`. Calls into the real CLI in `src/cyberm4fia_wifi/`. |
+| `cyberm4fia.sh` | One-shot launcher for the live scan. Re-execs under sudo if needed, detaches `wlan0` from NetworkManager, runs the scan, and restores NM on exit. |
+
+```bash
+# List detected adapters (no root, no NM detach):
+python3 run.py adapters
+
+# Live scan + TUI — does the whole sudo / NM dance for you:
+./cyberm4fia.sh scan
+
+# Different interface? Override IFACE:
+IFACE=wlan1 ./cyberm4fia.sh scan
+```
+
+Inside the TUI: arrow keys to pick an AP, **F4** to lock on its channel,
+**F5** pause, **F2** sort, **F3** filter, **q** quit.
+
+If you'd rather have a proper `cyberm4fia` command on your `$PATH`,
+`pipx install --editable .` and use it directly — that path ends up at
+the same code.
+
+---
+
 ## Install
 
 Tested on **Kali Linux 2024.x** (Debian-derived distros should work the same). Root is required
