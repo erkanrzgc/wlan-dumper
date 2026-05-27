@@ -53,17 +53,43 @@ class ClientSeen(Event):
 
 @dataclass(frozen=True, slots=True)
 class EAPOLCapture(Event):
-    """Phase 2 only — declared now to lock the contract."""
+    """An EAPOL key frame seen on the wire. Emitted by the sniffer in Phase 2a.
+
+    ``message_index`` is the 1..4 position of this frame in the WPA 4-way
+    handshake; ``None`` when the EAPOL Key Info field is unparseable.
+    ``raw`` is the full frame bytes so plugins can append it to a pcap.
+    """
 
     bssid: str
     station: str
-    message_index: int  # 1..4 of the 4-way handshake
-    pcap_offset: int
+    message_index: int | None
+    raw: bytes
+
+
+@dataclass(frozen=True, slots=True)
+class DeauthSent(Event):
+    """One forged deauth frame just left the radio."""
+
+    target_bssid: str
+    target_station: str | None  # None == broadcast
+    sequence: int               # 1-based position inside the burst
+    total: int                  # configured burst size
+
+
+@dataclass(frozen=True, slots=True)
+class HandshakeComplete(Event):
+    """A valid (per hcxpcapngtool) WPA handshake has been written to disk."""
+
+    bssid: str
+    station: str
+    pcap_path: str
+    hashcat_path: str | None    # None when hcxpcapngtool is missing/rejected
+    valid_by_hcxtool: bool
 
 
 @dataclass(frozen=True, slots=True)
 class PMKIDFound(Event):
-    """Phase 2 only — declared now to lock the contract."""
+    """Phase 2b only — declared now to lock the contract."""
 
     bssid: str
     pmkid_hex: str

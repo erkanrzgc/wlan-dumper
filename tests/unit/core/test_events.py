@@ -144,3 +144,69 @@ class TestEventDataclasses:
             timestamp=0.0,
         )
         assert evt.essid is None
+
+
+class TestPhase2EventDataclasses:
+    def test_deauth_sent_carries_burst_position(self) -> None:
+        from cyberm4fia_wifi.core.events import DeauthSent
+
+        evt = DeauthSent(
+            timestamp=1.0,
+            target_bssid="aa:bb:cc:dd:ee:01",
+            target_station="11:22:33:44:55:66",
+            sequence=3,
+            total=8,
+        )
+        assert evt.sequence == 3
+        assert evt.total == 8
+
+    def test_deauth_sent_allows_broadcast(self) -> None:
+        from cyberm4fia_wifi.core.events import DeauthSent
+
+        evt = DeauthSent(
+            timestamp=1.0,
+            target_bssid="aa:bb:cc:dd:ee:01",
+            target_station=None,
+            sequence=1,
+            total=5,
+        )
+        assert evt.target_station is None
+
+    def test_eapol_capture_carries_raw_bytes_and_optional_index(self) -> None:
+        from cyberm4fia_wifi.core.events import EAPOLCapture
+
+        evt = EAPOLCapture(
+            timestamp=1.0,
+            bssid="aa:bb:cc:dd:ee:01",
+            station="11:22:33:44:55:66",
+            message_index=2,
+            raw=b"\x00\x01\x02",
+        )
+        assert evt.message_index == 2
+        assert evt.raw == b"\x00\x01\x02"
+
+    def test_eapol_capture_message_index_may_be_none(self) -> None:
+        from cyberm4fia_wifi.core.events import EAPOLCapture
+
+        evt = EAPOLCapture(
+            timestamp=1.0,
+            bssid="aa:bb:cc:dd:ee:01",
+            station="11:22:33:44:55:66",
+            message_index=None,
+            raw=b"",
+        )
+        assert evt.message_index is None
+
+    def test_handshake_complete_carries_artifact_paths(self) -> None:
+        from cyberm4fia_wifi.core.events import HandshakeComplete
+
+        evt = HandshakeComplete(
+            timestamp=1.0,
+            bssid="aa:bb:cc:dd:ee:01",
+            station="11:22:33:44:55:66",
+            pcap_path="/tmp/x.pcap",
+            hashcat_path="/tmp/x.22000",
+            valid_by_hcxtool=True,
+        )
+        assert evt.hashcat_path == "/tmp/x.22000"
+        assert evt.valid_by_hcxtool is True
