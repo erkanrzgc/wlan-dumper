@@ -97,7 +97,7 @@ class ScanApp(App[None]):
     }
 
     #status_bar {
-        height: 2;
+        height: 3;
         padding: 0 2;
         background: $primary 30%;
         color: $text;
@@ -141,6 +141,9 @@ class ScanApp(App[None]):
     Log {
         background: $surface-lighten-1;
         height: 1fr;
+        scrollbar-size-vertical: 1;
+        scrollbar-background: $surface;
+        scrollbar-color: $primary 40%;
     }
     """
 
