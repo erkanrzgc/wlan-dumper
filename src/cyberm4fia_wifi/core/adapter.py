@@ -65,6 +65,13 @@ ADAPTERS: dict[tuple[int, int], AdapterProfile] = {
         injection=True,
         driver="88XXau",
     ),
+    (0x0BDA, 0xB812): AdapterProfile(  # AC1200 (Techkey and similar)
+        name="RTL8822BU",
+        bands=("2.4", "5"),
+        injection=True,
+        driver="88x2bu",
+        injection_unverified=True,  # depends heavily on which OOT driver is loaded
+    ),
 }
 
 
@@ -112,7 +119,39 @@ _UDEV_VENDOR_RE = re.compile(r"^ID_VENDOR_ID=([0-9a-fA-F]+)", re.MULTILINE)
 _UDEV_MODEL_RE = re.compile(r"^ID_MODEL_ID=([0-9a-fA-F]+)", re.MULTILINE)
 
 
+def _sysfs_vendor_product(iface: str) -> tuple[int, int] | None:
+    """Read parent USB device's idVendor/idProduct from sysfs.
+
+    The interface device (e.g. ``3-2:1.0``) doesn't carry these attributes,
+    but its parent USB device (``3-2``) does. Returns None when the files
+    are missing (non-USB radio, restricted container, etc.).
+    """
+    try:
+        from pathlib import Path
+
+        device = Path(f"/sys/class/net/{iface}/device").resolve()
+        parent = device.parent
+        v_file = parent / "idVendor"
+        p_file = parent / "idProduct"
+        if v_file.exists() and p_file.exists():
+            return (
+                int(v_file.read_text().strip(), 16),
+                int(p_file.read_text().strip(), 16),
+            )
+    except (OSError, ValueError):
+        return None
+    return None
+
+
 def _vendor_product_for(iface: str) -> tuple[int, int] | None:
+    # Preferred path: sysfs is authoritative when present and survives the
+    # cases where udevadm only fills ID_VENDOR_FROM_DATABASE (no _ID_).
+    sysfs = _sysfs_vendor_product(iface)
+    if sysfs is not None:
+        return sysfs
+
+    # Fallback: scrape udevadm output. Useful when sysfs isn't accessible
+    # (chroots, restricted containers) but ID_VENDOR_ID is populated upstream.
     res = _run(["udevadm", "info", "-q", "property", f"/sys/class/net/{iface}/device"])
     if res.returncode != 0:
         return None

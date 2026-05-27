@@ -68,6 +68,7 @@ class FakeRun:
 class FakeSubprocess:
     plan: dict[tuple[str, ...], FakeRun] = field(default_factory=dict)
     calls: list[list[str]] = field(default_factory=list)
+    sysfs: dict[str, tuple[int, int]] = field(default_factory=dict)
 
 
 @pytest.fixture
@@ -90,6 +91,13 @@ def fake_subprocess(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeSubprocess]
     from cyberm4fia_wifi.core import adapter
 
     monkeypatch.setattr(adapter, "_run", run)
+    # Stub sysfs lookup so tests exercise the udevadm fallback deterministically;
+    # individual tests can override fixture.sysfs to simulate the sysfs hit path.
+    monkeypatch.setattr(
+        adapter,
+        "_sysfs_vendor_product",
+        lambda iface: fixture.sysfs.get(iface),
+    )
     yield fixture
 
 
