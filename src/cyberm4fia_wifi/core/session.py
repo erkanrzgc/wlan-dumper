@@ -45,6 +45,8 @@ class APRecord:
     last_seen: float
     beacon_count: int = 0
     data_count: int = 0
+    wps: bool = False
+    beacon_interval_ms: int = 0
 
 
 @dataclass(slots=True)
@@ -140,6 +142,8 @@ class Session:
                     first_seen=evt.timestamp,
                     last_seen=evt.timestamp,
                     beacon_count=1,
+                    wps=evt.wps,
+                    beacon_interval_ms=evt.beacon_interval_ms,
                 )
                 return
 
@@ -148,6 +152,11 @@ class Session:
             existing.signal_dbm = evt.signal_dbm
             existing.channel = evt.channel
             existing.encryption = evt.encryption
+            # Sticky bits: WPS / beacon-interval are stable across beacons but
+            # IE walks can occasionally miss one — keep the strongest signal.
+            existing.wps = existing.wps or evt.wps
+            if evt.beacon_interval_ms:
+                existing.beacon_interval_ms = evt.beacon_interval_ms
             # Promote a known ESSID over a previously-hidden None, but never
             # overwrite a real ESSID with None (a hidden beacon arriving later).
             if evt.essid is not None:
@@ -166,11 +175,17 @@ class Session:
                     last_seen=evt.timestamp,
                     frames=1,
                 )
-                return
+            else:
+                existing.last_seen = evt.timestamp
+                existing.signal_dbm = evt.signal_dbm
+                existing.frames += 1
 
-            existing.last_seen = evt.timestamp
-            existing.signal_dbm = evt.signal_dbm
-            existing.frames += 1
+            # Bump the parent AP's data-frame count when we know the AP.
+            # ClientSeen is emitted from data frames and probe responses; both
+            # are evidence that the AP has live RF activity.
+            ap = self._aps.get(evt.bssid)
+            if ap is not None:
+                ap.data_count += 1
 
 
 def _filter_kwargs(raw: dict[str, Any], cls: type) -> dict[str, Any]:

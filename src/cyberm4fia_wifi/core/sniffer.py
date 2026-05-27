@@ -124,6 +124,23 @@ def _extract_encryption(pkt: Any) -> str:
     return "OPEN"
 
 
+def _has_wps_ie(elt: Any) -> bool:
+    """True iff a Wi-Fi Protected Setup IE (vendor specific OUI 0x0050F2, type 0x04) is present."""
+    try:
+        Dot11Elt = _scapy().Dot11Elt  # noqa: N806
+        Dot11EltVendorSpecific = _scapy().Dot11EltVendorSpecific  # noqa: N806
+    except AttributeError:
+        return False
+    while elt is not None:
+        if isinstance(elt, Dot11EltVendorSpecific):
+            oui = getattr(elt, "oui", 0)
+            info = bytes(getattr(elt, "info", b"") or b"")
+            if oui == 0x0050F2 and info[:1] == b"\x04":
+                return True
+        elt = elt.payload.getlayer(Dot11Elt) if hasattr(elt, "payload") else None
+    return False
+
+
 def dissect_packet(pkt: Any, *, now: float | None = None) -> list[Event]:
     """Convert a single 802.11 frame into zero or more events."""
     s = _scapy()
@@ -150,6 +167,10 @@ def dissect_packet(pkt: Any, *, now: float | None = None) -> list[Event]:
             # cap is on Dot11Beacon (and Dot11ProbeResp); attach to pkt for _extract_encryption
             pkt.cap = getattr(beacon, "cap", 0)
             encryption = _extract_encryption(pkt)
+            wps = _has_wps_ie(pkt.getlayer(Dot11Elt))
+            # beacon_interval is in TUs (1 TU = 1.024 ms); convert to ms.
+            interval_tu = int(getattr(beacon, "beacon_interval", 0) or 0)
+            interval_ms = int(round(interval_tu * 1.024)) if interval_tu else 0
             out.append(
                 BeaconSeen(
                     timestamp=ts,
@@ -158,6 +179,8 @@ def dissect_packet(pkt: Any, *, now: float | None = None) -> list[Event]:
                     channel=channel,
                     encryption=encryption,
                     signal_dbm=_signal_from_radiotap(pkt),
+                    wps=wps,
+                    beacon_interval_ms=interval_ms,
                 )
             )
         return out

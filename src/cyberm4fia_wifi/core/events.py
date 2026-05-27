@@ -33,6 +33,8 @@ class BeaconSeen(Event):
     channel: int
     encryption: str  # "OPEN" | "WEP" | "WPA-PSK" | "WPA2-PSK" | "WPA3-SAE" | "WPA2/3-MIXED"
     signal_dbm: int
+    wps: bool = False  # WPS IE present in the beacon — attack vector flag
+    beacon_interval_ms: int = 0  # 0 = unknown / not parsed
 
 
 @dataclass(frozen=True, slots=True)
