@@ -49,8 +49,8 @@ class HandshakePlugin(Plugin):
         @click.option("--count", "-n", default=8, show_default=True, type=int)
         @click.option("--timeout", default=60, show_default=True, type=int)
         @click.option(
-            "--reason", "-r", "--i-am-authorized-to-do-this",
-            "reason", required=True,
+            "--note", default=None,
+            help="Free-text note appended to the audit-log line",
         )
         @click.pass_context
         def handshake_cmd(
@@ -60,7 +60,7 @@ class HandshakePlugin(Plugin):
             no_deauth: bool,
             count: int,
             timeout: int,
-            reason: str,
+            note: str | None,
         ) -> None:
             from cyberm4fia_wifi.cli import build_runtime_for  # noqa: PLC0415
 
@@ -76,7 +76,7 @@ class HandshakePlugin(Plugin):
                 auto_deauth=not no_deauth,
                 deauth_count=count,
                 timeout=timeout,
-                reason=reason,
+                reason=note,
             )
             ctx.exit(rc)
 
@@ -93,7 +93,7 @@ class HandshakePlugin(Plugin):
         auto_deauth: bool = True,
         deauth_count: int = 8,
         timeout: float = 60.0,
-        reason: str,
+        reason: str | None = None,
     ) -> int:
         effective_risk = PluginRisk.HIGH if auto_deauth else self.risk
         gate.check(
@@ -133,7 +133,7 @@ class HandshakePlugin(Plugin):
         target_bssid: str,
         target_station: str | None,
         essid: str | None,
-        reason: str,
+        reason: str | None = None,
     ) -> None:
         self._bus = bus
         self._target_bssid = target_bssid.lower()

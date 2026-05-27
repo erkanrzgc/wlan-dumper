@@ -37,7 +37,7 @@ class DeauthPlugin(Plugin):
     requires_injection = True
 
     def register_cli(self, group: click.Group) -> None:
-        @group.command(name=self.name, help="Send a burst of deauth frames (risk=high)")
+        @group.command(name=self.name, help="Send a burst of deauth frames")
         @click.option("--target", "-t", required=True, help="AP BSSID to spoof")
         @click.option(
             "--client", "-c", required=True,
@@ -45,9 +45,9 @@ class DeauthPlugin(Plugin):
         )
         @click.option("--count", "-n", default=8, show_default=True, type=int)
         @click.option(
-            "--reason", "-r", "--i-am-authorized-to-do-this",
-            "reason", required=True,
-            help="Authorization reason, recorded verbatim in the audit log",
+            "--note",
+            default=None,
+            help="Free-text note appended to the audit-log line for this run",
         )
         @click.pass_context
         def deauth_cmd(
@@ -55,7 +55,7 @@ class DeauthPlugin(Plugin):
             target: str,
             client: str,
             count: int,
-            reason: str,
+            note: str | None,
         ) -> None:
             from cyberm4fia_wifi.cli import build_runtime_for  # noqa: PLC0415
 
@@ -70,7 +70,7 @@ class DeauthPlugin(Plugin):
                 target_bssid=target,
                 target_station=target_station,
                 count=count,
-                reason=reason,
+                reason=note,
             )
             ctx.exit(rc)
 
@@ -83,7 +83,7 @@ class DeauthPlugin(Plugin):
         target_bssid: str,
         target_station: str | None,
         count: int = 8,
-        reason: str = "",
+        reason: str | None = None,
     ) -> int:
         gate.check(plugin=self.name, risk=self.risk, target=target_bssid, reason=reason)
 

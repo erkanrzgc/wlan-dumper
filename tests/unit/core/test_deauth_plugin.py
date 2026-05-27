@@ -6,7 +6,7 @@ import pytest
 
 scapy = pytest.importorskip("scapy.all")
 
-from cyberm4fia_wifi.core.auth import AuthorizationGate, AuthzConfig, Mode
+from cyberm4fia_wifi.core.auth import AuthorizationGate, AuthzConfig
 from cyberm4fia_wifi.core.events import DeauthSent, EventBus
 from cyberm4fia_wifi.plugins.deauth import DeauthPlugin
 
@@ -14,7 +14,7 @@ from cyberm4fia_wifi.plugins.deauth import DeauthPlugin
 @pytest.fixture
 def gate(tmp_config_home) -> AuthorizationGate:
     g = AuthorizationGate.from_xdg()
-    g.set_config(AuthzConfig(mode=Mode.LAB, acknowledged_at="x"))
+    g.set_config(AuthzConfig(acknowledged_at="x"))
     return g
 
 
@@ -74,18 +74,16 @@ class TestDeauthExecute:
         for frame in sent:
             assert frame[Dot11].addr1.lower() == "ff:ff:ff:ff:ff:ff"
 
-    def test_requires_reason_via_auth_gate(
-        self, tmp_config_home, monkeypatch: pytest.MonkeyPatch
+    def test_reason_is_optional(
+        self, gate, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from cyberm4fia_wifi.core.auth import AuthzError
+        """Gate no longer enforces a reason — execute must run without one."""
         _capture_sent(monkeypatch)
-        gate = AuthorizationGate.from_xdg()
-        gate.set_config(AuthzConfig(mode=Mode.LAB, acknowledged_at="x"))
         plugin = DeauthPlugin()
-        with pytest.raises(AuthzError):
-            plugin.execute(
-                bus=EventBus(), gate=gate, iface="wlan0mon",
-                target_bssid="AA:BB:CC:DD:EE:01",
-                target_station="11:22:33:44:55:66",
-                count=1, reason="",
-            )
+        rc = plugin.execute(
+            bus=EventBus(), gate=gate, iface="wlan0mon",
+            target_bssid="AA:BB:CC:DD:EE:01",
+            target_station="11:22:33:44:55:66",
+            count=1,
+        )
+        assert rc == 0

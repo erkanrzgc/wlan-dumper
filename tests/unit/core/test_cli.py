@@ -10,7 +10,7 @@ from click.testing import CliRunner
 from cyberm4fia_wifi import cli as cli_module
 from cyberm4fia_wifi.cli import main
 from cyberm4fia_wifi.core.adapter import ADAPTERS, DetectedAdapter
-from cyberm4fia_wifi.core.auth import AuthzConfig, Mode
+from cyberm4fia_wifi.core.auth import AuthzConfig
 
 
 @pytest.fixture
@@ -19,7 +19,7 @@ def cli_env(tmp_config_home: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     from cyberm4fia_wifi.core.auth import AuthorizationGate
 
     gate = AuthorizationGate.from_xdg()
-    AuthzConfig(mode=Mode.LAB, acknowledged_at="2026-05-27T00:00:00Z").dump(gate.config_path)
+    AuthzConfig(acknowledged_at="2026-05-27T00:00:00Z").dump(gate.config_path)
     return tmp_config_home
 
 

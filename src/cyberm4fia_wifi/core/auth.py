@@ -1,43 +1,33 @@
-"""Authorization gate, mode persistence, and audit log.
+"""One-time legal acknowledgment + append-only audit log.
 
-Every CLI invocation passes through ``AuthorizationGate.ensure_acknowledged``
-before anything else. On first launch the operator picks a mode and accepts a
-short legal acknowledgment; the choice is persisted to ``$XDG_CONFIG_HOME/
-cyberm4fia/authz.yaml`` (default ``~/.config/cyberm4fia/authz.yaml``).
+This module used to host a multi-mode authorization gate. It was removed in
+favour of a simpler model: the operator is an ethical security professional,
+accepts legal responsibility once, and is then trusted to run any plugin
+without per-action prompts. The audit log is kept — it's a record for the
+operator's own benefit (after-the-fact accountability), not a runtime gate.
 
-Plugins then call ``gate.check(plugin, risk, target, reason)`` before they act.
-The gate enforces:
+Public surface:
 
-- ``risk: passive``  — always allowed; not logged.
-- ``risk: active``   — allowed when ``mode == lab``; in ``pentest`` mode the
-                        ``target`` BSSID must be in the whitelist; in
-                        ``general`` mode a non-None ``target`` is required;
-                        every successful check is appended to the audit log.
-- ``risk: high``     — requires ``reason`` to be a non-empty string
-                        (passed via ``--i-am-authorized-to-do-this``); the
-                        reason is logged verbatim.
-
-In Phase 1 the gate is wired up but only the scan plugin (``risk: passive``)
-calls it. The full risk matrix lives in the design spec, §5.4.
+- ``AuthorizationGate.from_xdg()`` — construct from ``$XDG_CONFIG_HOME`` and
+  ``$XDG_DATA_HOME`` (defaults: ``~/.config/cyberm4fia/authz.yaml`` and
+  ``~/.local/share/cyberm4fia/audit.log``).
+- ``gate.ensure_acknowledged(stdin, stdout)`` — first-launch only. Shows the
+  legal notice and persists a timestamp. Subsequent launches are silent.
+- ``gate.check(plugin, target=None, risk=None, reason=None)`` — no-op except
+  for the audit log. ``risk=PluginRisk.PASSIVE`` is not logged (too noisy).
+  All other risk levels append one line. Never raises.
 """
 
 from __future__ import annotations
 
 import datetime as dt
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import IO
 
 import yaml
-
-
-class Mode(StrEnum):
-    LAB = "lab"
-    PENTEST = "pentest"
-    CTF = "ctf"
-    GENERAL = "general"
 
 
 class PluginRisk(StrEnum):
@@ -47,62 +37,46 @@ class PluginRisk(StrEnum):
 
 
 class AuthzError(Exception):
-    """Raised when an action is not authorized under the current configuration."""
+    """Raised only when the first-launch legal acknowledgment is refused."""
 
 
 _LEGAL_NOTICE = """\
-cyberm4fia-wifi performs 802.11 audit actions that affect real networks and
-real users. Use it only against networks you own or have explicit, written
-permission to audit. You are responsible for legal compliance in your
-jurisdiction. The mode you choose determines which actions are allowed and
-which are recorded in the audit log.
-
-Modes:
-  lab      — you own everything in radio range (RF chamber, test APs)
-  pentest  — signed engagement; only whitelisted BSSIDs accept active actions
-  ctf      — educational lab; every active action is logged
-  general  — default; passive scan free, active actions need per-target opt-in
+cyberm4fia-wifi performs 802.11 audit actions that affect real networks
+and real users. You are responsible for legal compliance in your
+jurisdiction. By proceeding you confirm you are authorized to audit the
+networks you will target. The tool keeps a local audit log of every
+active action — it's for your own records.
 """
 
 
 @dataclass
 class AuthzConfig:
-    mode: Mode
+    """Persisted state. Holds the legal-acknowledgment timestamp only."""
+
     acknowledged_at: str
-    whitelist_bssids: list[str] = field(default_factory=list)
 
     @classmethod
     def load(cls, path: Path) -> AuthzConfig | None:
         if not path.exists():
             return None
         raw = yaml.safe_load(path.read_text()) or {}
-        try:
-            mode = Mode(raw["mode"])
-        except (KeyError, ValueError) as exc:
-            raise AuthzError(f"invalid mode in {path}: {raw.get('mode')!r}") from exc
-        return cls(
-            mode=mode,
-            acknowledged_at=str(raw.get("acknowledged_at", "")),
-            whitelist_bssids=list(raw.get("whitelist_bssids") or []),
-        )
+        ts = raw.get("acknowledged_at")
+        if not ts:
+            return None
+        return cls(acknowledged_at=str(ts))
 
     def dump(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "mode": self.mode.value,
-            "acknowledged_at": self.acknowledged_at,
-            "whitelist_bssids": self.whitelist_bssids,
-        }
-        path.write_text(yaml.safe_dump(payload, sort_keys=False))
+        path.write_text(yaml.safe_dump({"acknowledged_at": self.acknowledged_at}))
 
 
 class AuthorizationGate:
+    """One-time legal ack + audit log writer."""
+
     def __init__(self, config_path: Path, audit_path: Path) -> None:
         self.config_path = config_path
         self.audit_path = audit_path
         self._config: AuthzConfig | None = None
-
-    # ---- construction -------------------------------------------------------
 
     @classmethod
     def from_xdg(cls) -> AuthorizationGate:
@@ -113,55 +87,56 @@ class AuthorizationGate:
             audit_path=data_home / "cyberm4fia" / "audit.log",
         )
 
-    # ---- config -------------------------------------------------------------
+    # ---- config ------------------------------------------------------------
 
     def set_config(self, cfg: AuthzConfig) -> None:
+        """Test helper — preload the acknowledgment without touching disk."""
         self._config = cfg
 
     @property
-    def config(self) -> AuthzConfig:
+    def config(self) -> AuthzConfig | None:
         if self._config is None:
-            loaded = AuthzConfig.load(self.config_path)
-            if loaded is None:
-                raise AuthzError("authorization config missing; run ensure_acknowledged() first")
-            self._config = loaded
+            self._config = AuthzConfig.load(self.config_path)
         return self._config
 
     def ensure_acknowledged(self, stdin: IO[str], stdout: IO[str]) -> None:
-        """Run the first-launch prompt if no config exists yet."""
-        existing = AuthzConfig.load(self.config_path)
-        if existing is not None:
-            self._config = existing
+        """Show the legal notice once. Silent on subsequent runs."""
+        if self.config is not None:
             return
 
         stdout.write(_LEGAL_NOTICE)
-        stdout.write("\nChoose mode [lab|pentest|ctf|general]: ")
-        stdout.flush()
-        raw_mode = stdin.readline().strip().lower()
-        try:
-            mode = Mode(raw_mode)
-        except ValueError as exc:
-            raise AuthzError(f"unknown mode: {raw_mode!r}") from exc
-
-        stdout.write(
-            "I acknowledge the legal notice above and confirm I am authorized "
-            "to use this tool against the targets I will specify [y/N]: "
-        )
+        stdout.write("\nProceed? [y/N]: ")
         stdout.flush()
         answer = stdin.readline().strip().lower()
         if answer != "y":
-            raise AuthzError("acknowledgment refused; aborting")
+            raise AuthzError("legal acknowledgment refused; aborting")
 
         cfg = AuthzConfig(
-            mode=mode,
             acknowledged_at=dt.datetime.now(tz=dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         )
         cfg.dump(self.config_path)
         self._config = cfg
 
-    # ---- enforcement --------------------------------------------------------
+    # ---- audit log ---------------------------------------------------------
 
     def check(
+        self,
+        *,
+        plugin: str,
+        risk: PluginRisk = PluginRisk.PASSIVE,
+        target: str | None = None,
+        reason: str | None = None,
+    ) -> None:
+        """No-op for passive risk; audit-log every active/high action.
+
+        Never raises. ``reason`` is recorded verbatim when supplied; callers
+        that don't have one are fine — the log line just omits it.
+        """
+        if risk is PluginRisk.PASSIVE:
+            return
+        self._audit(plugin=plugin, risk=risk, target=target, reason=reason)
+
+    def _audit(
         self,
         *,
         plugin: str,
@@ -169,47 +144,11 @@ class AuthorizationGate:
         target: str | None,
         reason: str | None,
     ) -> None:
-        cfg = self.config
-
-        if risk is PluginRisk.PASSIVE:
-            return  # always allowed; not logged
-
-        if risk is PluginRisk.HIGH and not reason:
-            raise AuthzError(
-                f"plugin {plugin!r} has risk=high; "
-                'pass --i-am-authorized-to-do-this "<reason>" to proceed'
-            )
-
-        if cfg.mode is Mode.PENTEST:
-            if target is None:
-                raise AuthzError(f"plugin {plugin!r} requires a --target BSSID in pentest mode")
-            if target not in cfg.whitelist_bssids:
-                raise AuthzError(
-                    f"target {target} is not in the pentest whitelist ({cfg.whitelist_bssids})"
-                )
-        elif cfg.mode is Mode.GENERAL:
-            if target is None:
-                raise AuthzError(
-                    f"plugin {plugin!r} (risk={risk.value}) requires an explicit "
-                    "--target BSSID in general mode"
-                )
-        # lab and ctf modes do not require a target for active actions
-
-        self._audit(plugin=plugin, mode=cfg.mode, target=target, reason=reason)
-
-    def _audit(
-        self,
-        *,
-        plugin: str,
-        mode: Mode,
-        target: str | None,
-        reason: str | None,
-    ) -> None:
         self.audit_path.parent.mkdir(parents=True, exist_ok=True)
         ts = dt.datetime.now(tz=dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         parts = [
             ts,
-            f"mode={mode.value}",
+            f"risk={risk.value}",
             f"plugin={plugin}",
             f"target={target if target is not None else '-'}",
         ]

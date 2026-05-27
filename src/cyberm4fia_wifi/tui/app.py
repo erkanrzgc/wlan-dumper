@@ -95,43 +95,44 @@ class ScanApp(App[None]):
         background: $surface;
     }
 
+    /* Status bar — terminal-style, slim, no heavy fill */
     #status_bar {
-        height: 4;
-        padding: 0 2;
-        background: $primary 30%;
+        height: 3;
+        padding: 0 1;
+        background: $surface;
         color: $text;
-        border-bottom: heavy $primary;
+        border-bottom: solid $primary 60%;
     }
 
+    /* AP panel — takes ~60% of the available space; no rounded borders */
     #ap_panel {
-        height: 1fr;
-        border: round $primary;
-        margin: 0 1;
+        height: 3fr;
+        border: solid $primary 60%;
         padding: 0;
     }
 
+    /* Bottom split — takes ~40%, dominated by the Log panel */
     #bottom_split {
-        height: 14;
-        margin: 0 1 0 1;
+        height: 2fr;
     }
 
     #details_panel {
-        width: 1fr;
-        border: round $warning;
+        width: 36;
+        border: solid $warning 60%;
         padding: 0 1;
-        margin-right: 1;
     }
 
     #client_panel {
-        width: 1fr;
-        border: round $accent;
+        width: 40;
+        border: solid $accent 60%;
         padding: 0;
-        margin-right: 1;
     }
 
+    /* Live Events takes everything that's left and uses a monospace,
+       full-width canvas so log lines breathe. */
     #log_panel {
         width: 1fr;
-        border: round $secondary;
+        border: solid $secondary 60%;
         padding: 0;
     }
 
@@ -145,7 +146,8 @@ class ScanApp(App[None]):
     }
 
     Log {
-        background: $surface-lighten-1;
+        background: $surface;
+        color: $text;
         height: 1fr;
         scrollbar-size-vertical: 1;
         scrollbar-background: $surface;
@@ -424,7 +426,6 @@ class ScanApp(App[None]):
             ("iface ", "dim"), (self._iface, "bold cyan"),
             ("  ·  driver ", "dim"), (self._driver_name, "bold white"),
             ("  ·  CH ", "dim"), (ch_label, "bold yellow"),
-            ("  ·  mode ", "dim"), (self._mode, "bold magenta"),
             ("  ·  uptime ", "dim"), (f"{uptime}s", "white"),
             ("    PAUSED", "bold red on yellow") if self._paused else ("", ""),
         )
@@ -574,7 +575,6 @@ class ScanApp(App[None]):
                 ap_channel=ap.channel,
                 clients=clients,
                 mfp_status=ap.mfp_status,
-                mode=self._mode,
             ),
             on_dismissed,
         )
@@ -599,7 +599,6 @@ class ScanApp(App[None]):
                 auto_deauth=req.auto_deauth,
                 deauth_count=req.deauth_count,
                 timeout=req.timeout,
-                reason=req.reason,
             ),
             thread=True,
             description="handshake",

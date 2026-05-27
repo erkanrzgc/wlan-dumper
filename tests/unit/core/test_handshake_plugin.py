@@ -9,7 +9,7 @@ import pytest
 scapy = pytest.importorskip("scapy.all")
 from scapy.all import Ether  # noqa: E402
 
-from cyberm4fia_wifi.core.auth import AuthorizationGate, AuthzConfig, Mode
+from cyberm4fia_wifi.core.auth import AuthorizationGate, AuthzConfig
 from cyberm4fia_wifi.core.events import EAPOLCapture, EventBus, HandshakeComplete
 from cyberm4fia_wifi.plugins.handshake import HandshakePlugin
 
@@ -17,7 +17,7 @@ from cyberm4fia_wifi.plugins.handshake import HandshakePlugin
 @pytest.fixture
 def gate(tmp_config_home) -> AuthorizationGate:
     g = AuthorizationGate.from_xdg()
-    g.set_config(AuthzConfig(mode=Mode.LAB, acknowledged_at="x"))
+    g.set_config(AuthzConfig(acknowledged_at="x"))
     return g
 
 

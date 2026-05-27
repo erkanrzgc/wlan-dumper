@@ -18,7 +18,7 @@ from dataclasses import dataclass
 import click
 
 from cyberm4fia_wifi.core.adapter import DetectedAdapter, detect_adapters
-from cyberm4fia_wifi.core.auth import AuthorizationGate, AuthzError, Mode
+from cyberm4fia_wifi.core.auth import AuthorizationGate, AuthzError
 from cyberm4fia_wifi.core.events import EventBus
 from cyberm4fia_wifi.core.session import Session
 
@@ -45,18 +45,11 @@ def _ctx_obj(ctx: click.Context) -> dict[str, object]:
     ),
 )
 @click.option("--iface", default=None, help="Wireless interface to use (e.g. wlan0).")
-@click.option(
-    "--mode",
-    type=click.Choice([m.value for m in Mode], case_sensitive=False),
-    default=None,
-    help="Override the persisted mode for this invocation.",
-)
 @click.option("--verbose", "-v", is_flag=True, help="Verbose logging.")
 @click.pass_context
-def main(ctx: click.Context, iface: str | None, mode: str | None, verbose: bool) -> None:
+def main(ctx: click.Context, iface: str | None, verbose: bool) -> None:
     obj = _ctx_obj(ctx)
     obj["iface"] = iface
-    obj["mode"] = mode
     obj["verbose"] = verbose
 
     gate = AuthorizationGate.from_xdg()
