@@ -90,3 +90,16 @@ async def test_pause_action_toggles_state() -> None:
         await pilot.press("f5")
         await pilot.pause()
         assert app._paused is True
+
+
+@pytest.mark.asyncio
+async def test_d_and_h_bindings_present() -> None:
+    sess = Session()
+    _populate(sess)
+    app = ScanApp(session=sess, bus=EventBus(), iface="wlan0mon", driver="ath9k_htc", mode="lab")
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        keys = {b.key for b in app.BINDINGS}
+        assert "d" in keys
+        assert "h" in keys

@@ -29,8 +29,11 @@ from cyberm4fia_wifi.core.events import (
     BeaconSeen,
     ChannelChanged,
     ClientSeen,
+    DeauthSent,
+    EAPOLCapture,
     Event,
     EventBus,
+    HandshakeComplete,
     ProbeSeen,
 )
 from cyberm4fia_wifi.core.hopper import ChannelHopper
@@ -158,6 +161,8 @@ class ScanApp(App[None]):
         Binding("f3", "filter_prompt", "Filter"),
         Binding("f4", "lock_channel", "Lock CH"),
         Binding("f5", "toggle_pause", "Pause"),
+        Binding("d", "deauth_prompt", "Deauth"),
+        Binding("h", "handshake_prompt", "Handshake"),
         Binding("q,f10", "quit", "Quit"),
     ]
 
@@ -235,6 +240,9 @@ class ScanApp(App[None]):
         self._bus.subscribe(ProbeSeen, self._log_event)  # type: ignore[arg-type]
         self._bus.subscribe(ClientSeen, self._log_event)  # type: ignore[arg-type]
         self._bus.subscribe(ChannelChanged, self._log_event)  # type: ignore[arg-type]
+        self._bus.subscribe(DeauthSent, self._log_event)  # type: ignore[arg-type]
+        self._bus.subscribe(EAPOLCapture, self._log_event)  # type: ignore[arg-type]
+        self._bus.subscribe(HandshakeComplete, self._log_event)  # type: ignore[arg-type]
         self.set_interval(_REFRESH_INTERVAL, self._tick)
 
     def _tick(self) -> None:
@@ -431,6 +439,18 @@ class ScanApp(App[None]):
             line = f"[client] {evt.station} on {evt.bssid} {evt.signal_dbm:>4}dBm"
         elif isinstance(evt, ChannelChanged):
             line = f"[chan  ] hop → {evt.channel}"
+        elif isinstance(evt, DeauthSent):
+            who = evt.target_station or "broadcast"
+            line = (
+                f"[deauth] → {who} ({evt.sequence}/{evt.total}) "
+                f"src={evt.target_bssid}"
+            )
+        elif isinstance(evt, EAPOLCapture):
+            mi = evt.message_index if evt.message_index is not None else "?"
+            line = f"[eapol ] M{mi}/4  {evt.bssid} ↔ {evt.station}"
+        elif isinstance(evt, HandshakeComplete):
+            verdict = "valid" if evt.valid_by_hcxtool else "partial"
+            line = f"[handshake] {verdict} → {evt.pcap_path}"
         else:
             line = type(evt).__name__
         try:
@@ -495,9 +515,71 @@ class ScanApp(App[None]):
 
     def action_help(self) -> None:
         self.notify(
-            "F2 sort · F3 filter · F4 lock channel · F5 pause · q quit",
+            "F2 sort · F3 filter · F4 lock channel · F5 pause · "
+            "d/h attack · q quit",
             timeout=10,
         )
+
+    async def action_handshake_prompt(self) -> None:
+        if not self._selected_bssid:
+            self.notify("select an AP first", severity="warning")
+            return
+        ap = next(
+            (a for a in self._session.aps_snapshot() if a.bssid == self._selected_bssid),
+            None,
+        )
+        if ap is None:
+            return
+        from cyberm4fia_wifi.tui.modals import HandshakeModal  # noqa: PLC0415
+
+        clients = [c.station for c in self._session.clients_of(ap.bssid)]
+        req = await self.push_screen_wait(
+            HandshakeModal(
+                ap_bssid=ap.bssid,
+                ap_essid=ap.essid,
+                ap_channel=ap.channel,
+                clients=clients,
+                mfp_status=ap.mfp_status,
+            )
+        )
+        if req is None:
+            self.notify("cancelled")
+            return
+        if self._hopper is not None:
+            self._hopper.lock(ap.channel)
+
+        from cyberm4fia_wifi.plugins.handshake import HandshakePlugin  # noqa: PLC0415
+
+        plugin = HandshakePlugin()
+        self.run_worker(
+            lambda: plugin.execute(
+                bus=self._bus,
+                gate=_resolve_gate(),
+                iface=self._iface,
+                target_bssid=ap.bssid,
+                target_station=req.target_station,
+                essid=ap.essid,
+                auto_deauth=req.auto_deauth,
+                deauth_count=req.deauth_count,
+                timeout=req.timeout,
+                reason=req.reason,
+            ),
+            thread=True,
+            description="handshake",
+        )
+
+    def action_deauth_prompt(self) -> None:
+        self.notify(
+            "Use 'h' for handshake (includes auto-deauth). "
+            "Standalone deauth via the CLI: cyberm4fia deauth ...",
+            timeout=8,
+        )
+
+
+def _resolve_gate():
+    from cyberm4fia_wifi.core.auth import AuthorizationGate  # noqa: PLC0415
+
+    return AuthorizationGate.from_xdg()
 
 
 def _sort_value(ap: Any, column: str) -> Any:
