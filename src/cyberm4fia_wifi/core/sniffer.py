@@ -26,6 +26,7 @@ from typing import Any
 from cyberm4fia_wifi.core.events import (
     BeaconSeen,
     ClientSeen,
+    EAPOLCapture,
     Event,
     EventBus,
     ProbeSeen,
@@ -141,6 +142,30 @@ def _has_wps_ie(elt: Any) -> bool:
     return False
 
 
+def _mfp_status(pkt: Any) -> str:
+    """Read MFP capable / required bits from the RSN Capabilities field.
+
+    Returns ``required`` / ``capable`` / ``none`` when an RSN IE is present,
+    ``unknown`` otherwise.
+    """
+    try:
+        Dot11EltRSN = getattr(_scapy(), "Dot11EltRSN", None)  # noqa: N806
+    except AttributeError:
+        return "unknown"
+    if Dot11EltRSN is None:
+        return "unknown"
+    rsn = pkt.getlayer(Dot11EltRSN)
+    if rsn is None:
+        return "unknown"
+    capable = bool(getattr(rsn, "mfp_capable", 0))
+    required = bool(getattr(rsn, "mfp_required", 0))
+    if required:
+        return "required"
+    if capable:
+        return "capable"
+    return "none"
+
+
 def dissect_packet(pkt: Any, *, now: float | None = None) -> list[Event]:
     """Convert a single 802.11 frame into zero or more events."""
     s = _scapy()
@@ -181,6 +206,25 @@ def dissect_packet(pkt: Any, *, now: float | None = None) -> list[Event]:
                     signal_dbm=_signal_from_radiotap(pkt),
                     wps=wps,
                     beacon_interval_ms=interval_ms,
+                    mfp_status=_mfp_status(pkt),
+                )
+            )
+        return out
+
+    EAPOL = getattr(s, "EAPOL", None)
+    if EAPOL is not None and pkt.haslayer(EAPOL):
+        from cyberm4fia_wifi.utils.eapol import message_index  # noqa: PLC0415
+
+        bssid = (dot11.addr3 or dot11.addr1 or "").lower()
+        station = (dot11.addr2 or "").lower()
+        if bssid and station:
+            out.append(
+                EAPOLCapture(
+                    timestamp=ts,
+                    bssid=bssid,
+                    station=station,
+                    message_index=message_index(pkt),
+                    raw=bytes(pkt),
                 )
             )
         return out

@@ -35,6 +35,7 @@ class BeaconSeen(Event):
     signal_dbm: int
     wps: bool = False  # WPS IE present in the beacon — attack vector flag
     beacon_interval_ms: int = 0  # 0 = unknown / not parsed
+    mfp_status: str = "unknown"   # "none" | "capable" | "required" | "unknown"
 
 
 @dataclass(frozen=True, slots=True)

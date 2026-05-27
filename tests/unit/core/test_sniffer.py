@@ -192,3 +192,42 @@ class TestNonDot11:
 
         pkt = Ether() / IP(dst="1.1.1.1")
         assert dissect_packet(pkt, now=100.0) == []
+
+
+class TestEapolDissection:
+    def test_eapol_frame_emits_capture_event(self) -> None:
+        from scapy.all import EAPOL, Dot11
+
+        body = bytes([2]) + (0x008A).to_bytes(2, "big") + b"\x00" * 89
+        eapol = EAPOL(version=2, type=3, len=len(body)) / body
+        pkt = (
+            Dot11(
+                type=2, subtype=8,
+                addr1="aa:bb:cc:dd:ee:01",
+                addr2="11:22:33:44:55:66",
+                addr3="aa:bb:cc:dd:ee:01",
+            )
+            / eapol
+        )
+
+        from cyberm4fia_wifi.core.events import EAPOLCapture
+
+        evts = dissect_packet(pkt, now=100.0)
+        eapol_evts = [e for e in evts if isinstance(e, EAPOLCapture)]
+        assert len(eapol_evts) == 1
+        evt = eapol_evts[0]
+        assert evt.bssid == "aa:bb:cc:dd:ee:01"
+        assert evt.station == "11:22:33:44:55:66"
+        assert evt.message_index == 1
+        assert isinstance(evt.raw, bytes) and len(evt.raw) > 0
+
+
+class TestMfpDetection:
+    def test_rsn_beacon_produces_a_known_mfp_status(self) -> None:
+        evts = dissect_packet(_make_beacon(rsn=True), now=100.0)
+        b = evts[0]
+        assert b.mfp_status in ("none", "capable", "required")
+
+    def test_open_beacon_without_rsn_is_unknown(self) -> None:
+        evts = dissect_packet(_make_beacon(rsn=False, cap=0x0000), now=100.0)
+        assert evts[0].mfp_status == "unknown"
