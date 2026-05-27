@@ -140,3 +140,59 @@ class TestPersistence:
         assert loaded.aps_snapshot()[0].bssid == "AA:BB:CC:DD:EE:01"
         assert len(loaded.clients_of("AA:BB:CC:DD:EE:01")) == 1
         assert loaded.active_channel == 6
+
+
+class TestHandshakeAndMfpFields:
+    def test_handshake_complete_event_bumps_counter(self) -> None:
+        from cyberm4fia_wifi.core.events import HandshakeComplete
+
+        sess = Session()
+        sess.handle_event(_beacon())
+        sess.handle_event(
+            HandshakeComplete(
+                timestamp=200.0,
+                bssid="AA:BB:CC:DD:EE:01",
+                station="11:22:33:44:55:66",
+                pcap_path="/tmp/x.pcap",
+                hashcat_path=None,
+                valid_by_hcxtool=True,
+            )
+        )
+
+        ap = sess.aps_snapshot()[0]
+        assert ap.handshake_count == 1
+
+    def test_mfp_status_promoted_from_beacon(self) -> None:
+        from cyberm4fia_wifi.core.events import BeaconSeen
+
+        sess = Session()
+        sess.handle_event(
+            BeaconSeen(
+                timestamp=1.0,
+                bssid="AA:BB:CC:DD:EE:01",
+                essid="Home",
+                channel=6,
+                encryption="WPA2-PSK",
+                signal_dbm=-50,
+                mfp_status="required",
+            )
+        )
+        assert sess.aps_snapshot()[0].mfp_status == "required"
+
+    def test_mfp_status_unknown_does_not_overwrite_known(self) -> None:
+        from cyberm4fia_wifi.core.events import BeaconSeen
+
+        sess = Session()
+        sess.handle_event(
+            BeaconSeen(
+                timestamp=1.0, bssid="x", essid="x", channel=1,
+                encryption="WPA2-PSK", signal_dbm=-50, mfp_status="required",
+            )
+        )
+        sess.handle_event(
+            BeaconSeen(
+                timestamp=2.0, bssid="x", essid="x", channel=1,
+                encryption="WPA2-PSK", signal_dbm=-50, mfp_status="unknown",
+            )
+        )
+        assert sess.aps_snapshot()[0].mfp_status == "required"

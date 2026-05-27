@@ -29,6 +29,7 @@ from cyberm4fia_wifi.core.events import (
     ClientSeen,
     Event,
     EventBus,
+    HandshakeComplete,
 )
 
 _SCHEMA_VERSION = 1
@@ -47,6 +48,8 @@ class APRecord:
     data_count: int = 0
     wps: bool = False
     beacon_interval_ms: int = 0
+    handshake_count: int = 0
+    mfp_status: str = "unknown"
 
 
 @dataclass(slots=True)
@@ -94,12 +97,25 @@ class Session:
         elif isinstance(event, ChannelChanged):
             with self._lock:
                 self._active_channel = event.channel
+        elif isinstance(event, HandshakeComplete):
+            with self._lock:
+                ap = self._aps.get(event.bssid) or self._aps.get(event.bssid.lower())
+                # Try uppercase too — BSSIDs may be stored either case depending
+                # on what the sniffer normalises.
+                if ap is None:
+                    for key, candidate in self._aps.items():
+                        if key.lower() == event.bssid.lower():
+                            ap = candidate
+                            break
+                if ap is not None:
+                    ap.handshake_count += 1
 
     def attach(self, bus: EventBus) -> None:
         """Subscribe to the event types this session cares about."""
         bus.subscribe(BeaconSeen, self.handle_event)
         bus.subscribe(ClientSeen, self.handle_event)
         bus.subscribe(ChannelChanged, self.handle_event)
+        bus.subscribe(HandshakeComplete, self.handle_event)
 
     # ---- persistence --------------------------------------------------------
 
@@ -144,6 +160,7 @@ class Session:
                     beacon_count=1,
                     wps=evt.wps,
                     beacon_interval_ms=evt.beacon_interval_ms,
+                    mfp_status=evt.mfp_status,
                 )
                 return
 
@@ -157,6 +174,9 @@ class Session:
             existing.wps = existing.wps or evt.wps
             if evt.beacon_interval_ms:
                 existing.beacon_interval_ms = evt.beacon_interval_ms
+            # MFP status: an 'unknown' beacon must never wipe a known verdict.
+            if evt.mfp_status != "unknown":
+                existing.mfp_status = evt.mfp_status
             # Promote a known ESSID over a previously-hidden None, but never
             # overwrite a real ESSID with None (a hidden beacon arriving later).
             if evt.essid is not None:
