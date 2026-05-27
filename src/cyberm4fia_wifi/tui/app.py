@@ -99,6 +99,15 @@ class ScanApp(App[None]):
         padding: 0 1;
     }
 
+    /* Main split: left column (AP table + Details|Clients) vs full-height Logs */
+    #main_split {
+        height: 1fr;
+    }
+
+    #left_pane {
+        width: 3fr;
+    }
+
     #ap_panel {
         height: 3fr;
         border: solid white;
@@ -174,7 +183,6 @@ class ScanApp(App[None]):
         ap_panel = Container(self._build_ap_table(), id="ap_panel")
         ap_panel.border_title = "Access Points"
         ap_panel.border_subtitle = "↑↓ select · click row · F4 lock channel"
-        yield ap_panel
 
         details_panel = Container(Static("(select an AP)", id="details"), id="details_panel")
         details_panel.border_title = "AP Details"
@@ -182,10 +190,13 @@ class ScanApp(App[None]):
         client_panel = Container(self._build_client_panel(), id="client_panel")
         client_panel.border_title = "Clients"
 
+        bottom = Horizontal(details_panel, client_panel, id="bottom_split")
+        left_pane = Vertical(ap_panel, bottom, id="left_pane")
+
         log_panel = Container(Log(highlight=False, id="log"), id="log_panel")
         log_panel.border_title = "Logs"
 
-        yield Horizontal(details_panel, client_panel, log_panel, id="bottom_split")
+        yield Horizontal(left_pane, log_panel, id="main_split")
         yield Footer()
 
     def _build_ap_table(self) -> DataTable[Any]:
