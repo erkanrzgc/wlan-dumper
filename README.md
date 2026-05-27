@@ -11,7 +11,8 @@ aircrack-ng (offline crack) workflows into a single plugin-extensible CLI with a
 | Phase | Status | Scope |
 |-------|--------|-------|
 | 1 | ✅ shipped | scan + display (passive, no frames transmitted) |
-| 2 | planned | handshake capture / deauth / PMKID / WPS |
+| 2a | ✅ shipped | deauth + handshake capture (.pcap + .22000) |
+| 2b | planned | PMKID + WPS |
 | 3 | planned | crack engine (aircrack-ng / hashcat) + Evil Twin |
 | 4 | planned | crunch / john-style wordlist generator |
 
