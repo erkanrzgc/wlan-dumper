@@ -225,6 +225,7 @@ class ScanApp(App[None]):
             "#Beacon",
             "#Data",
             "WPS",
+            "HS",
         )
         return table
 
@@ -277,6 +278,11 @@ class ScanApp(App[None]):
             enc_style = _ENC_STYLES.get(ap.encryption, "white")
             vendor = oui_for(ap.bssid) or "—"
             wps_marker = Text("⚠", style="bold yellow") if ap.wps else Text("·", style="dim")
+            hs_marker = (
+                Text(f"✓{ap.handshake_count}", style="bold green")
+                if ap.handshake_count
+                else Text("·", style="dim")
+            )
             table.add_row(
                 Text(ap.bssid, style="cyan"),
                 Text(f"{ap.signal_dbm:>4}", style=_signal_style(ap.signal_dbm)),
@@ -288,6 +294,7 @@ class ScanApp(App[None]):
                 Text(str(ap.beacon_count), style="dim"),
                 Text(str(ap.data_count), style="bold cyan" if ap.data_count else "dim"),
                 wps_marker,
+                hs_marker,
                 key=ap.bssid,
             )
         if previous and any(ap.bssid == previous for ap in rows):
@@ -534,7 +541,9 @@ class ScanApp(App[None]):
             timeout=10,
         )
 
-    async def action_handshake_prompt(self) -> None:
+    def action_handshake_prompt(self) -> None:
+        """Open the handshake modal. Uses the callback form of push_screen
+        because action handlers run on the UI thread, not a worker."""
         if not self._selected_bssid:
             self.notify("select an AP first", severity="warning")
             return
@@ -547,24 +556,37 @@ class ScanApp(App[None]):
         from cyberm4fia_wifi.tui.modals import HandshakeModal  # noqa: PLC0415
 
         clients = [c.station for c in self._session.clients_of(ap.bssid)]
-        req = await self.push_screen_wait(
+        # Snapshot AP so the closure below doesn't race the snapshot list.
+        captured = ap
+
+        def on_dismissed(req) -> None:
+            if req is None:
+                self.notify("cancelled")
+                return
+            if self._hopper is not None:
+                self._hopper.lock(captured.channel)
+            self._launch_handshake_worker(captured, req)
+
+        self.push_screen(
             HandshakeModal(
                 ap_bssid=ap.bssid,
                 ap_essid=ap.essid,
                 ap_channel=ap.channel,
                 clients=clients,
                 mfp_status=ap.mfp_status,
-            )
+            ),
+            on_dismissed,
         )
-        if req is None:
-            self.notify("cancelled")
-            return
-        if self._hopper is not None:
-            self._hopper.lock(ap.channel)
 
+    def _launch_handshake_worker(self, ap: APRecord, req: Any) -> None:
         from cyberm4fia_wifi.plugins.handshake import HandshakePlugin  # noqa: PLC0415
 
         plugin = HandshakePlugin()
+        self.notify(
+            f"capture started: {ap.essid or ap.bssid} ch{ap.channel} "
+            f"({'auto-deauth' if req.auto_deauth else 'passive'})",
+            timeout=5,
+        )
         self.run_worker(
             lambda: plugin.execute(
                 bus=self._bus,
@@ -584,8 +606,8 @@ class ScanApp(App[None]):
 
     def action_deauth_prompt(self) -> None:
         self.notify(
-            "Use 'h' for handshake (includes auto-deauth). "
-            "Standalone deauth via the CLI: cyberm4fia deauth ...",
+            "'d' alone is reserved. Use 'h' — the modal has an 'Auto-deauth' "
+            "toggle and the live events show every frame as it goes out.",
             timeout=8,
         )
 
