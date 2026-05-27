@@ -1,0 +1,99 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cyberm4fia-wifi"
+version = "0.1.0"
+description = "802.11 audit suite: scan + display (Phase 1), handshake/deauth/PMKID/WPS (Phase 2), crack + Evil Twin (Phase 3), wordlist generator (Phase 4)."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "erkanrzgc" }]
+license = { text = "MIT" }
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: Console :: Curses",
+    "Intended Audience :: Information Technology",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Security",
+]
+dependencies = [
+    "scapy>=2.5",
+    "textual>=0.50",
+    "click>=8.1",
+    "rich>=13.0",
+    "pyyaml>=6.0",
+    "psutil>=5.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.1",
+    "pytest-asyncio>=0.23",
+    "pytest-textual-snapshot>=0.4",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "types-PyYAML",
+    "types-psutil",
+]
+
+[project.scripts]
+cyberm4fia = "cyberm4fia_wifi.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/erkanrzgc/cyberm4fia-wiFi-cracker"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
+markers = [
+    "live_rf: tests that require a real radio (skipped in CI)",
+]
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["src/cyberm4fia_wifi"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # isort
+    "B",   # bugbear
+    "UP",  # pyupgrade
+    "SIM", # simplify
+    "C4",  # comprehensions
+    "ARG", # unused arguments
+    "RUF", # ruff-specific
+]
+ignore = [
+    "E501", # line length handled by formatter
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["ARG"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
