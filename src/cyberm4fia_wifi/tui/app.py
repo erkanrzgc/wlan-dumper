@@ -373,6 +373,20 @@ class ScanApp(App[None]):
             "\n",
             ("WPS      ", "dim"), wps,
             "\n",
+            ("MFP      ", "dim"),
+            (
+                ap.mfp_status,
+                "bold red" if ap.mfp_status == "required"
+                else "yellow" if ap.mfp_status == "capable"
+                else "dim",
+            ),
+            "\n",
+            ("Handshakes ", "dim"),
+            (
+                str(ap.handshake_count),
+                "bold green" if ap.handshake_count else "dim",
+            ),
+            "\n",
             ("Seen     ", "dim"),
             (f"{seen_for}s span", "white"),
             ("  ·  last ", "dim"),

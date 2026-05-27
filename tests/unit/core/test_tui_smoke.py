@@ -103,3 +103,42 @@ async def test_d_and_h_bindings_present() -> None:
         keys = {b.key for b in app.BINDINGS}
         assert "d" in keys
         assert "h" in keys
+
+
+@pytest.mark.asyncio
+async def test_ap_details_shows_mfp_and_handshake_count() -> None:
+    sess = Session()
+    from cyberm4fia_wifi.core.events import BeaconSeen, HandshakeComplete
+
+    sess.handle_event(
+        BeaconSeen(
+            timestamp=100.0,
+            bssid="aa:bb:cc:dd:ee:01",
+            essid="MyHome",
+            channel=6,
+            encryption="WPA2-PSK",
+            signal_dbm=-42,
+            mfp_status="required",
+        )
+    )
+    sess.handle_event(
+        HandshakeComplete(
+            timestamp=101.0,
+            bssid="aa:bb:cc:dd:ee:01",
+            station="11:22:33:44:55:66",
+            pcap_path="/tmp/x.pcap",
+            hashcat_path=None,
+            valid_by_hcxtool=True,
+        )
+    )
+
+    app = ScanApp(session=sess, bus=EventBus(), iface="wlan0mon", driver="ath9k_htc", mode="lab")
+    async with app.run_test() as pilot:
+        app._selected_bssid = "aa:bb:cc:dd:ee:01"
+        app._tick()
+        await pilot.pause()
+        text = str(app.query_one("#details").render())
+        assert "MFP" in text
+        assert "required" in text
+        assert "Handshakes" in text
+        assert "1" in text
