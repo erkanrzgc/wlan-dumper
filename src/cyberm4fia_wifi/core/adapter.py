@@ -1,0 +1,198 @@
+"""USB adapter detection and monitor-mode management.
+
+Walks ``iw dev`` to enumerate wireless interfaces, resolves each interface to
+its USB vendor/product ID via ``udevadm info``, and matches against the
+``ADAPTERS`` capability matrix. Unknown chipsets fall back to a generic profile
+with ``injection_unverified=True`` so the operator gets a warning instead of a
+silent guess.
+
+Monitor mode is entered with ``airmon-ng start`` and the resulting interface
+name is parsed from stdout. ``AdapterManager.restore`` runs ``airmon-ng stop``
+on the monitor interface; the manager is also usable as a context manager,
+and ``AdapterManager.enter_monitor_mode`` registers an ``atexit`` callback so
+a hard crash still attempts cleanup.
+
+Subprocess calls go through the module-level ``_run`` indirection so tests can
+patch them with a single ``monkeypatch.setattr`` and never touch the real
+``subprocess`` module.
+"""
+
+from __future__ import annotations
+
+import atexit
+import re
+import subprocess
+from dataclasses import dataclass, field
+from typing import Any
+
+
+@dataclass(frozen=True, slots=True)
+class AdapterProfile:
+    name: str
+    bands: tuple[str, ...]
+    injection: bool
+    driver: str
+    injection_unverified: bool = False
+
+
+_GENERIC = AdapterProfile(
+    name="generic",
+    bands=("2.4",),
+    injection=False,
+    driver="unknown",
+    injection_unverified=True,
+)
+
+
+# Public capability matrix. Extend by adding (vendor, product) -> AdapterProfile.
+ADAPTERS: dict[tuple[int, int], AdapterProfile] = {
+    (0x0CF3, 0x9271): AdapterProfile(
+        name="AR9271",
+        bands=("2.4",),
+        injection=True,
+        driver="ath9k_htc",
+    ),
+    (0x0BDA, 0x8812): AdapterProfile(
+        name="RTL8812AU",
+        bands=("2.4", "5"),
+        injection=True,
+        driver="88XXau",
+    ),
+    (0x0BDA, 0x881A): AdapterProfile(  # AC1300 variant
+        name="RTL8812AU",
+        bands=("2.4", "5"),
+        injection=True,
+        driver="88XXau",
+    ),
+}
+
+
+@dataclass(slots=True)
+class DetectedAdapter:
+    iface: str
+    profile: AdapterProfile
+    vendor_id: int
+    product_id: int
+
+
+class AdapterError(Exception):
+    """Raised when adapter operations fail (detection or monitor toggle)."""
+
+
+# ---- subprocess indirection (tests patch this) -----------------------------
+
+_subprocess_plan: dict[tuple[str, ...], Any] = {}  # unused at runtime; tests patch
+
+
+def _run(argv: list[str], **_kwargs: Any) -> Any:  # pragma: no cover — patched in tests
+    completed = subprocess.run(
+        argv,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return completed
+
+
+# ---- detection -------------------------------------------------------------
+
+
+_IW_IFACE_RE = re.compile(r"Interface\s+(\S+)")
+
+
+def _iw_dev_interfaces() -> list[str]:
+    res = _run(["iw", "dev"])
+    if res.returncode != 0:
+        return []
+    return _IW_IFACE_RE.findall(res.stdout)
+
+
+_UDEV_VENDOR_RE = re.compile(r"^ID_VENDOR_ID=([0-9a-fA-F]+)", re.MULTILINE)
+_UDEV_MODEL_RE = re.compile(r"^ID_MODEL_ID=([0-9a-fA-F]+)", re.MULTILINE)
+
+
+def _vendor_product_for(iface: str) -> tuple[int, int] | None:
+    res = _run(["udevadm", "info", "-q", "property", f"/sys/class/net/{iface}/device"])
+    if res.returncode != 0:
+        return None
+    v = _UDEV_VENDOR_RE.search(res.stdout)
+    p = _UDEV_MODEL_RE.search(res.stdout)
+    if not (v and p):
+        return None
+    return int(v.group(1), 16), int(p.group(1), 16)
+
+
+def detect_adapters() -> list[DetectedAdapter]:
+    """Enumerate wireless interfaces and resolve each to an AdapterProfile."""
+    found: list[DetectedAdapter] = []
+    for iface in _iw_dev_interfaces():
+        ids = _vendor_product_for(iface)
+        if ids is None:
+            # Couldn't read USB IDs (perhaps a non-USB radio); use generic profile.
+            found.append(
+                DetectedAdapter(iface=iface, profile=_GENERIC, vendor_id=0, product_id=0)
+            )
+            continue
+        vendor, product = ids
+        profile = ADAPTERS.get((vendor, product), _GENERIC)
+        found.append(
+            DetectedAdapter(
+                iface=iface, profile=profile, vendor_id=vendor, product_id=product
+            )
+        )
+    return found
+
+
+# ---- monitor-mode manager --------------------------------------------------
+
+
+_AIRMON_NEW_IFACE_RE = re.compile(
+    r"monitor mode vif enabled for \[phy\d+\](\w+) on \[phy\d+\](\w+)"
+)
+
+
+@dataclass(slots=True)
+class AdapterManager:
+    iface: str
+    profile: AdapterProfile
+    monitor_iface: str | None = None
+    _atexit_registered: bool = field(default=False, init=False, repr=False)
+
+    def enter_monitor_mode(self) -> str:
+        res = _run(["airmon-ng", "start", self.iface])
+        if res.returncode != 0:
+            raise AdapterError(
+                f"airmon-ng start {self.iface} failed (rc={res.returncode}): "
+                f"{(res.stderr or res.stdout).strip()}"
+            )
+        m = _AIRMON_NEW_IFACE_RE.search(res.stdout or "")
+        if m:
+            mon_iface = m.group(2)
+        else:
+            # Heuristic fallback: many drivers append "mon" to the iface name.
+            mon_iface = f"{self.iface}mon"
+        self.monitor_iface = mon_iface
+        if not self._atexit_registered:
+            atexit.register(self._atexit_restore)
+            self._atexit_registered = True
+        return mon_iface
+
+    def restore(self) -> None:
+        if self.monitor_iface is None:
+            return
+        _run(["airmon-ng", "stop", self.monitor_iface])
+        self.monitor_iface = None
+
+    # ---- atexit / context manager ------------------------------------------
+
+    def _atexit_restore(self) -> None:  # pragma: no cover — atexit path
+        try:
+            self.restore()
+        except Exception:  # noqa: BLE001 — best-effort cleanup
+            pass
+
+    def __enter__(self) -> str:
+        return self.enter_monitor_mode()
+
+    def __exit__(self, *_exc: object) -> None:
+        self.restore()
