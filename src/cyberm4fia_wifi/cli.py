@@ -88,7 +88,14 @@ def adapters_cmd() -> None:
 
 
 def build_runtime_for(ctx: click.Context) -> Runtime:
-    """Construct the shared per-invocation runtime for a plugin."""
+    """Construct the shared per-invocation runtime for a plugin.
+
+    Detection happens here, after the auth gate has acknowledged. If more
+    than one adapter is detected and the operator didn't pin ``--iface``,
+    an interactive picker prompts them — entering monitor mode is a real
+    side effect (radio flips away from normal use), so we want explicit
+    consent on which device gets touched.
+    """
     obj = _ctx_obj(ctx)
     gate = obj.get("gate")
     if gate is None:
@@ -96,10 +103,11 @@ def build_runtime_for(ctx: click.Context) -> Runtime:
 
     preferred = obj.get("iface")
     adapters = detect_adapters()
-    from cyberm4fia_wifi.plugins.scan import pick_adapter  # local import: avoid cycle
+    from cyberm4fia_wifi.plugins.scan import interactive_pick_adapter  # avoid cycle
 
-    adapter = pick_adapter(
-        adapters, preferred_iface=preferred if isinstance(preferred, str) else None
+    adapter = interactive_pick_adapter(
+        adapters,
+        preferred_iface=preferred if isinstance(preferred, str) else None,
     )
     return Runtime(
         session=Session(),

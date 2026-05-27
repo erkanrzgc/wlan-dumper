@@ -42,5 +42,13 @@ coverage.xml
 sessions/
 audit.log
 
+# Capture artifacts produced at runtime — keep the directory tree (via
+# .gitkeep) but ignore everything dropped inside it.
+captures/**/*.pcap
+captures/**/*.22000
+captures/**/*.hccapx
+captures/**/*.json
+!captures/**/.gitkeep
+
 # Keep curated test fixtures
 !tests/fixtures/pcaps/*.pcap

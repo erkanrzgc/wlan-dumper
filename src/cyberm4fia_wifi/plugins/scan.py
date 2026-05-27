@@ -25,7 +25,7 @@ from cyberm4fia_wifi.tui.app import ScanApp
 
 
 def pick_adapter(adapters: list[DetectedAdapter], preferred_iface: str | None) -> DetectedAdapter:
-    """Return the adapter that matches ``preferred_iface`` or the first one found."""
+    """Non-interactive selection — used by tests and by the auto-pick path."""
     if not adapters:
         raise click.ClickException(
             "no wireless adapters detected — is the radio plugged in and "
@@ -41,9 +41,67 @@ def pick_adapter(adapters: list[DetectedAdapter], preferred_iface: str | None) -
         )
     if len(adapters) == 1:
         return adapters[0]
-    # Multiple adapters present: prefer one with injection over generic.
     with_injection = [a for a in adapters if a.profile.injection]
     return (with_injection or adapters)[0]
+
+
+def interactive_pick_adapter(
+    adapters: list[DetectedAdapter],
+    preferred_iface: str | None,
+    *,
+    stdin: Any = None,
+    stdout: Any = None,
+) -> DetectedAdapter:
+    """Ask the operator which adapter to use when more than one is present.
+
+    Explicit ``--iface`` always wins; a single detected adapter is auto-picked
+    silently. Two or more adapters trigger a numbered prompt so the operator
+    can compare chipset / band / injection capability before committing to
+    monitor mode.
+    """
+    if not adapters:
+        raise click.ClickException(
+            "no wireless adapters detected — is the radio plugged in and "
+            "is the driver loaded? (try: dmesg | tail)"
+        )
+    if preferred_iface:
+        for a in adapters:
+            if a.iface == preferred_iface:
+                return a
+        raise click.ClickException(
+            f"requested --iface {preferred_iface!r} not found; "
+            f"available: {[a.iface for a in adapters]}"
+        )
+    if len(adapters) == 1:
+        return adapters[0]
+
+    out = stdout or sys.stdout
+    inp = stdin or sys.stdin
+    print("\nMultiple wireless adapters detected — pick one:\n", file=out)
+    for i, a in enumerate(adapters, start=1):
+        bands = "+".join(a.profile.bands)
+        inj = "inject" if a.profile.injection else "no inject"
+        unverified = " (unverified)" if a.profile.injection_unverified else ""
+        print(
+            f"  [{i}] {a.iface:8s}  {a.profile.name:12s}  "
+            f"driver={a.profile.driver:10s}  bands={bands:5s}  {inj}{unverified}",
+            file=out,
+        )
+    print(file=out)
+    out.write(f"Choice [1-{len(adapters)}, default 1]: ")
+    out.flush()
+    raw = inp.readline().strip()
+    if not raw:
+        return adapters[0]
+    try:
+        idx = int(raw)
+    except ValueError as exc:
+        raise click.ClickException(f"not a number: {raw!r}") from exc
+    if not 1 <= idx <= len(adapters):
+        raise click.ClickException(
+            f"choice {idx} out of range [1-{len(adapters)}]"
+        )
+    return adapters[idx - 1]
 
 
 class ScanPlugin(Plugin):
