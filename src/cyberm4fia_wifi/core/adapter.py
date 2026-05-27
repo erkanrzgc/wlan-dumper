@@ -204,6 +204,26 @@ def _monitor_ifaces() -> list[str]:
     return [name for (name, kind) in _IW_DEV_BLOCK_RE.findall(res.stdout) if kind == "monitor"]
 
 
+def iface_link_info(iface: str) -> tuple[str, str]:
+    """Return ``(mac, operstate)`` for an interface, read from sysfs.
+
+    ``operstate`` is one of ``up`` / ``down`` / ``unknown``. MAC and state
+    both fall back to ``"-"`` if the file is unreadable (containers,
+    permissions, race with hot-unplug).
+    """
+    from pathlib import Path
+
+    try:
+        mac = Path(f"/sys/class/net/{iface}/address").read_text().strip() or "-"
+    except OSError:
+        mac = "-"
+    try:
+        state = Path(f"/sys/class/net/{iface}/operstate").read_text().strip() or "-"
+    except OSError:
+        state = "-"
+    return mac, state
+
+
 def _set_nm_managed(iface: str, *, managed: bool) -> bool:
     """Best-effort NetworkManager detach/restore for the selected interface."""
     state = "yes" if managed else "no"

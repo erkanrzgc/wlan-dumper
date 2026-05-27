@@ -115,22 +115,31 @@ def _is_tty(stream: Any) -> bool:
 def _pick_adapter_tui(adapters: list[DetectedAdapter]) -> DetectedAdapter:
     from textual.app import App, ComposeResult
     from textual.binding import Binding
-    from textual.containers import Horizontal
-    from textual.widgets import Button, DataTable, Footer, Header, Static
+    from textual.containers import Container, Horizontal
+    from textual.widgets import Button, DataTable, Static
+
+    from cyberm4fia_wifi.core.adapter import iface_link_info
 
     class AdapterPickerApp(App[int | None]):
         TITLE = "cyberm4fia-wifi"
-        SUB_TITLE = "pick wireless interface"
         BINDINGS: ClassVar[list[Binding]] = [
-            Binding("enter", "start", "Start scan"),
+            Binding("enter", "select", "Select"),
             Binding("q,escape", "cancel", "Cancel"),
         ]
-        # No theme — let the terminal palette show through.
+        # Centered small dialog; no theme overrides so the terminal palette wins.
         CSS = """
-        Screen { layout: vertical; }
-        #hint { height: 3; padding: 0 1; }
-        #adapter_dt { height: 1fr; }
-        #buttons { height: 3; align: right middle; padding: 0 1; }
+        Screen { align: center middle; }
+        #picker {
+            width: 88;
+            height: auto;
+            border: solid white;
+            padding: 1 2;
+        }
+        #title { padding-bottom: 1; }
+        #hint { padding-bottom: 1; }
+        #adapter_dt { height: auto; max-height: 14; }
+        #footnote { padding-top: 1; }
+        #buttons { height: 3; align: right middle; padding-top: 1; }
         #buttons Button { margin-left: 1; }
         """
 
@@ -139,19 +148,28 @@ def _pick_adapter_tui(adapters: list[DetectedAdapter]) -> DetectedAdapter:
             self._chosen_idx: int = 0
 
         def compose(self) -> ComposeResult:
-            yield Header(show_clock=False)
-            yield Static(
-                "Pick the wireless interface to scan with. ↑↓ to move, "
-                "Enter or [Start scan] to begin, q to cancel.",
-                id="hint",
-            )
-            table = DataTable[str](zebra_stripes=True, cursor_type="row", id="adapter_dt")
-            table.add_columns("Interface", "Chipset", "Driver", "Bands", "Injection")
-            yield table
-            with Horizontal(id="buttons"):
-                yield Button("Cancel", id="cancel_btn")
-                yield Button("Start scan", id="start_btn", variant="primary")
-            yield Footer()
+            with Container(id="picker"):
+                yield Static(Text("Select interface", style="bold"), id="title")
+                yield Static(
+                    Text("↑↓ to move · Enter to confirm · q to cancel", style="dim"),
+                    id="hint",
+                )
+                table = DataTable[str](zebra_stripes=True, cursor_type="row", id="adapter_dt")
+                table.add_columns(
+                    "Interface", "State", "MAC", "Chipset", "Driver", "Bands", "Inject"
+                )
+                yield table
+                yield Static(
+                    Text(
+                        "Only wireless interfaces are listed — eth*, docker0, "
+                        "br-*, veth* etc. can't enter monitor mode.",
+                        style="dim",
+                    ),
+                    id="footnote",
+                )
+                with Horizontal(id="buttons"):
+                    yield Button("Cancel", id="cancel_btn")
+                    yield Button("Select interface", id="ok_btn", variant="primary")
 
         def on_mount(self) -> None:
             table = self.query_one("#adapter_dt", DataTable)
@@ -160,8 +178,12 @@ def _pick_adapter_tui(adapters: list[DetectedAdapter]) -> DetectedAdapter:
                 injection = "yes" if profile.injection else "no"
                 if profile.injection_unverified:
                     injection = f"{injection}?"
+                mac, state = iface_link_info(adapter.iface)
+                state_style = "green" if state == "up" else "dim"
                 table.add_row(
                     Text(adapter.iface, style="cyan"),
+                    Text(state, style=state_style),
+                    Text(mac, style="dim"),
                     Text(profile.name),
                     Text(profile.driver, style="dim"),
                     Text("+".join(profile.bands), style="green"),
@@ -175,18 +197,17 @@ def _pick_adapter_tui(adapters: list[DetectedAdapter]) -> DetectedAdapter:
                 self._chosen_idx = int(str(event.row_key.value))
 
         def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-            # Double-click / Enter on a row → treat as Start.
             with contextlib.suppress(TypeError, ValueError):
                 self._chosen_idx = int(str(event.row_key.value))
-            self.action_start()
+            self.action_select()
 
         def on_button_pressed(self, event: Button.Pressed) -> None:
             if event.button.id == "cancel_btn":
                 self.action_cancel()
-            elif event.button.id == "start_btn":
-                self.action_start()
+            elif event.button.id == "ok_btn":
+                self.action_select()
 
-        def action_start(self) -> None:
+        def action_select(self) -> None:
             if 0 <= self._chosen_idx < len(adapters):
                 self.exit(self._chosen_idx)
 
