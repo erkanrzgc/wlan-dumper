@@ -53,6 +53,31 @@ _SORT_COLUMNS = ("pwr", "ch", "essid", "beacon_count", "data_count")
 # flood the log faster than the eye can read.
 _BEACON_LOG_EVERY = 50
 
+# Fixed-column log layout so every event type lines up under the same header.
+#   Time    : 8  ("HH:MM:SS")
+#   Event   : 8  ("AP+  ", "STA   ", "DEAUTH", "EAPOL ", "HS    ")
+#   Station : 17 (MAC address or "—")
+#   BSSID   : 17 (MAC address or "—")
+#   Detail  : rest of line
+_LOG_COL_WIDTHS = (8, 8, 17, 17)
+_LOG_HEADER = (
+    f"{'Time':<{_LOG_COL_WIDTHS[0]}}  "
+    f"{'Event':<{_LOG_COL_WIDTHS[1]}}  "
+    f"{'Station':<{_LOG_COL_WIDTHS[2]}}  "
+    f"{'BSSID':<{_LOG_COL_WIDTHS[3]}}  "
+    "Detail"
+)
+
+
+def _log_row(time_: str, event: str, station: str, bssid: str, detail: str) -> str:
+    return (
+        f"{time_:<{_LOG_COL_WIDTHS[0]}}  "
+        f"{event:<{_LOG_COL_WIDTHS[1]}}  "
+        f"{station:<{_LOG_COL_WIDTHS[2]}}  "
+        f"{bssid:<{_LOG_COL_WIDTHS[3]}}  "
+        f"{detail}"
+    )
+
 
 def _signal_style(dbm: int) -> str:
     if dbm > -50:
@@ -201,7 +226,7 @@ class ScanApp(App[None]):
         left_pane = Vertical(ap_panel, bottom, id="left_pane")
 
         log_header = Static(
-            Text("Time      Event   Details", style="dim"),
+            Text(_LOG_HEADER, style="dim"),
             id="log_header",
         )
         log_panel = Container(
@@ -463,10 +488,13 @@ class ScanApp(App[None]):
 
     def _format_log_line(self, evt: Event) -> str | None:
         stamp = _fmt_ts(evt.timestamp)
+        # Every event lays out as Time | Event | Station | BSSID | Detail
+        # so the columns are aligned under the sticky header.
         if isinstance(evt, BeaconSeen):
-            # Only log new APs + every Nth beacon for known ones, otherwise
-            # the panel is unreadable (~10 beacons/sec/AP).
-            if evt.bssid in self._known_bssids:
+            # Only log first-seen APs + every Nth beacon for known ones,
+            # otherwise the panel floods (~10 beacons/sec per AP).
+            first_seen = evt.bssid not in self._known_bssids
+            if not first_seen:
                 ap = next(
                     (a for a in self._session.aps_snapshot()
                      if a.bssid.lower() == evt.bssid.lower()),
@@ -475,36 +503,37 @@ class ScanApp(App[None]):
                 if ap is None or ap.beacon_count % _BEACON_LOG_EVERY != 0:
                     return None
             self._known_bssids.add(evt.bssid)
-            tag = "AP+" if evt.bssid not in self._known_bssids else "AP "
-            tag = "AP+"
-            return (
-                f"{stamp}  {tag}  {evt.bssid}  ch{evt.channel:>3}  "
-                f"{evt.signal_dbm:>4}dBm  {evt.encryption:<14} {evt.essid or '<hidden>'}"
+            tag = "AP+" if first_seen else "AP"
+            detail = (
+                f"ch{evt.channel:>3}  {evt.signal_dbm:>4}dBm  "
+                f"{evt.encryption:<12}  {evt.essid or '<hidden>'}"
             )
+            return _log_row(stamp, tag, "-", evt.bssid, detail)
         if isinstance(evt, ProbeSeen):
-            return None  # too noisy by default; future F-key to enable
+            return None  # too noisy by default
         if isinstance(evt, ClientSeen):
-            ap_label = self._ap_label(evt.bssid)
-            return (
-                f"{stamp}  STA   {evt.station}  on {_clip(ap_label, 20)}  "
-                f"{evt.signal_dbm:>4}dBm"
+            return _log_row(
+                stamp, "STA", evt.station, evt.bssid, f"{evt.signal_dbm:>4}dBm",
             )
         if isinstance(evt, ChannelChanged):
-            return None  # silent hop — channel is shown in status bar
+            return None  # silent hop — channel shown in status bar
         if isinstance(evt, DeauthSent):
             who = evt.target_station or "broadcast"
-            return (
-                f"{stamp}  DEAUTH  {evt.sequence:>2}/{evt.total:<2}  "
-                f"-> {who}  ap {evt.target_bssid}"
+            return _log_row(
+                stamp, "DEAUTH", who, evt.target_bssid,
+                f"frame {evt.sequence:>3}/{evt.total}",
             )
         if isinstance(evt, EAPOLCapture):
             mi = evt.message_index if evt.message_index is not None else "?"
-            return f"{stamp}  EAPOL   M{mi}/4  {evt.station} <-> {evt.bssid}"
+            return _log_row(stamp, "EAPOL", evt.station, evt.bssid, f"M{mi}/4")
         if isinstance(evt, HandshakeComplete):
             verdict = "VALID" if evt.valid_by_hcxtool else "PARTIAL"
             artifact = evt.hashcat_path or evt.pcap_path
-            return f"{stamp}  HS     {verdict}  {evt.bssid}  -> {artifact}"
-        return f"{stamp}  EVENT   {type(evt).__name__}"
+            return _log_row(
+                stamp, "HS", evt.station, evt.bssid,
+                f"{verdict}  saved {artifact}",
+            )
+        return _log_row(stamp, "EVENT", "-", "-", type(evt).__name__)
 
     def _ap_label(self, bssid: str) -> str:
         needle = bssid.lower()

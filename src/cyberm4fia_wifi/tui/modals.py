@@ -16,6 +16,21 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, Input, Label, Select, Static
 
 
+def _positive_int(raw: str | None, *, default: int) -> int:
+    """Parse the input field as a positive int; fall back to default on garbage.
+
+    Input(type='integer') already filters non-digit keystrokes, but the
+    operator can still leave the field empty or paste a negative sign. We
+    coerce anything < 1 to the default so the worker thread never sees a
+    nonsense count/timeout.
+    """
+    try:
+        value = int((raw or "").strip())
+    except (TypeError, ValueError):
+        return default
+    return value if value >= 1 else default
+
+
 @dataclass
 class HandshakeRequest:
     target_station: str | None
@@ -154,8 +169,12 @@ class HandshakeModal(ModalScreen[HandshakeRequest | None]):
                 HandshakeRequest(
                     target_station=target_sta,
                     auto_deauth=self.query_one("#auto_deauth", Checkbox).value,
-                    deauth_count=int(self.query_one("#count_input", Input).value or "8"),
-                    timeout=int(self.query_one("#timeout_input", Input).value or "60"),
+                    deauth_count=_positive_int(
+                        self.query_one("#count_input", Input).value, default=8
+                    ),
+                    timeout=_positive_int(
+                        self.query_one("#timeout_input", Input).value, default=60
+                    ),
                     override_mfp=override,
                 )
             )

@@ -115,8 +115,8 @@ def _is_tty(stream: Any) -> bool:
 def _pick_adapter_tui(adapters: list[DetectedAdapter]) -> DetectedAdapter:
     from textual.app import App, ComposeResult
     from textual.binding import Binding
-    from textual.containers import Container, Horizontal
-    from textual.widgets import Button, DataTable, Static
+    from textual.containers import Container
+    from textual.widgets import DataTable, Static
 
     from cyberm4fia_wifi.core.adapter import iface_link_info
 
@@ -126,7 +126,7 @@ def _pick_adapter_tui(adapters: list[DetectedAdapter]) -> DetectedAdapter:
             Binding("enter", "select", "Select"),
             Binding("q,escape", "cancel", "Cancel"),
         ]
-        # Centered small dialog; no theme overrides so the terminal palette wins.
+        # Centred dialog, keyboard-driven, no buttons.
         CSS = """
         Screen { align: center middle; }
         #picker {
@@ -136,11 +136,8 @@ def _pick_adapter_tui(adapters: list[DetectedAdapter]) -> DetectedAdapter:
             padding: 1 2;
         }
         #title { padding-bottom: 1; }
-        #hint { padding-bottom: 1; }
         #adapter_dt { height: auto; max-height: 14; }
-        #footnote { padding-top: 1; }
-        #buttons { height: 3; align: right middle; padding-top: 1; }
-        #buttons Button { margin-left: 1; }
+        #hint { padding-top: 1; }
         """
 
         def __init__(self) -> None:
@@ -150,26 +147,24 @@ def _pick_adapter_tui(adapters: list[DetectedAdapter]) -> DetectedAdapter:
         def compose(self) -> ComposeResult:
             with Container(id="picker"):
                 yield Static(Text("Select interface", style="bold"), id="title")
-                yield Static(
-                    Text("↑↓ to move · Enter to confirm · q to cancel", style="dim"),
-                    id="hint",
-                )
                 table = DataTable[str](zebra_stripes=True, cursor_type="row", id="adapter_dt")
                 table.add_columns(
                     "Interface", "State", "MAC", "Chipset", "Driver", "Bands", "Inject"
                 )
                 yield table
                 yield Static(
-                    Text(
-                        "Only wireless interfaces are listed — eth*, docker0, "
-                        "br-*, veth* etc. can't enter monitor mode.",
-                        style="dim",
+                    Text.assemble(
+                        ("Only wireless interfaces shown — eth*, docker0, br-*, "
+                         "veth* etc. can't enter monitor mode.\n", "dim"),
+                        ("↑↓", ""),
+                        (" move  ·  ", "dim"),
+                        ("Enter", ""),
+                        (" select  ·  ", "dim"),
+                        ("Esc", ""),
+                        (" cancel", "dim"),
                     ),
-                    id="footnote",
+                    id="hint",
                 )
-                with Horizontal(id="buttons"):
-                    yield Button("Cancel", id="cancel_btn")
-                    yield Button("Select interface", id="ok_btn", variant="primary")
 
         def on_mount(self) -> None:
             table = self.query_one("#adapter_dt", DataTable)
@@ -200,12 +195,6 @@ def _pick_adapter_tui(adapters: list[DetectedAdapter]) -> DetectedAdapter:
             with contextlib.suppress(TypeError, ValueError):
                 self._chosen_idx = int(str(event.row_key.value))
             self.action_select()
-
-        def on_button_pressed(self, event: Button.Pressed) -> None:
-            if event.button.id == "cancel_btn":
-                self.action_cancel()
-            elif event.button.id == "ok_btn":
-                self.action_select()
 
         def action_select(self) -> None:
             if 0 <= self._chosen_idx < len(adapters):
