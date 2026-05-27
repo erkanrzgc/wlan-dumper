@@ -136,18 +136,25 @@ class ScanApp(App[None]):
         padding: 0;
     }
 
+    #log_header {
+        height: 1;
+        padding: 0 1;
+    }
+
     DataTable { height: 1fr; }
     Log { height: 1fr; }
     """
 
     BINDINGS: ClassVar[list[Binding]] = [
-        Binding("f1", "help", "Help", show=False),
+        Binding("f1", "help", "Help"),
         Binding("f2", "cycle_sort", "Sort"),
         Binding("f3", "filter_prompt", "Filter"),
         Binding("f4", "lock_channel", "Lock CH"),
         Binding("f5", "toggle_pause", "Pause"),
         Binding("d", "deauth_prompt", "Deauth"),
         Binding("h", "handshake_prompt", "Handshake"),
+        Binding("c", "focus_clients", "Clients"),
+        Binding("a", "focus_aps", "APs"),
         Binding("q,f10", "quit", "Quit"),
     ]
 
@@ -193,7 +200,14 @@ class ScanApp(App[None]):
         bottom = Horizontal(details_panel, client_panel, id="bottom_split")
         left_pane = Vertical(ap_panel, bottom, id="left_pane")
 
-        log_panel = Container(Log(highlight=False, id="log"), id="log_panel")
+        log_header = Static(
+            Text("Time      Event   Details", style="dim"),
+            id="log_header",
+        )
+        log_panel = Container(
+            Vertical(log_header, Log(highlight=False, id="log")),
+            id="log_panel",
+        )
         log_panel.border_title = "Logs"
 
         yield Horizontal(left_pane, log_panel, id="main_split")
@@ -420,19 +434,19 @@ class ScanApp(App[None]):
         uptime = int(time.time() - self._started_at)
 
         line1 = Text.assemble(
-            ("iface ", "dim"), (self._iface, "cyan"),
-            ("  driver ", "dim"), (self._driver_name, ""),
-            ("  CH ", "dim"), (ch_label, "yellow"),
-            ("  uptime ", "dim"), (f"{uptime}s", ""),
+            ("iface: ", "dim"), (self._iface, "cyan"),
+            ("   driver: ", "dim"), (self._driver_name, ""),
+            ("   channel: ", "dim"), (ch_label, "yellow"),
+            ("   uptime: ", "dim"), (f"{uptime}s", ""),
             ("    PAUSED", "red") if self._paused else ("", ""),
         )
         line2 = Text.assemble(
-            ("APs ", "dim"), (f"{ap_count}", "green"),
-            ("  2.4 ", "dim"), (str(c24), "green"),
-            ("  5 ", "dim"), (str(c5), "green"),
-            ("  WPS ", "dim"), (str(wps_count), "yellow" if wps_count else "dim"),
-            ("  clients ", "dim"), (str(clients_total), "cyan"),
-            ("  filter ", "dim"),
+            ("APs: ", "dim"), (f"{ap_count}", "green"),
+            ("   2.4GHz: ", "dim"), (str(c24), "green"),
+            ("   5GHz: ", "dim"), (str(c5), "green"),
+            ("   WPS-APs: ", "dim"), (str(wps_count), "yellow" if wps_count else "dim"),
+            ("   clients: ", "dim"), (str(clients_total), "cyan"),
+            ("   filter: ", "dim"),
             (f'"{self._filter}"' if self._filter else "—",
              "yellow" if self._filter else "dim"),
         )
@@ -560,6 +574,17 @@ class ScanApp(App[None]):
     def action_toggle_pause(self) -> None:
         self._paused = not self._paused
         self.notify("paused" if self._paused else "resumed")
+
+    def action_focus_aps(self) -> None:
+        with suppress(NoMatches):
+            self.query_one("#ap_dt", DataTable).focus()
+
+    def action_focus_clients(self) -> None:
+        if not self._selected_bssid:
+            self.notify("select an AP first to see its clients", severity="warning")
+            return
+        with suppress(NoMatches):
+            self.query_one("#client_dt", DataTable).focus()
 
     def action_help(self) -> None:
         self.notify(
