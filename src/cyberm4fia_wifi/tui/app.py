@@ -574,6 +574,7 @@ class ScanApp(App[None]):
                 ap_channel=ap.channel,
                 clients=clients,
                 mfp_status=ap.mfp_status,
+                mode=self._mode,
             ),
             on_dismissed,
         )
