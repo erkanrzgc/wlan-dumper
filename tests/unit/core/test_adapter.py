@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
@@ -64,36 +64,33 @@ class FakeRun:
     returncode: int = 0
 
 
+@dataclass
+class FakeSubprocess:
+    plan: dict[tuple[str, ...], FakeRun] = field(default_factory=dict)
+    calls: list[list[str]] = field(default_factory=list)
+
+
 @pytest.fixture
-def fake_subprocess(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[tuple[list[str], FakeRun]]]:
+def fake_subprocess(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeSubprocess]:
     """Record subprocess calls and return canned outputs based on argv prefix."""
-    calls: list[tuple[list[str], FakeRun]] = []
-    plan: dict[tuple[str, ...], FakeRun] = {}
+    fixture = FakeSubprocess()
 
     def run(argv: list[str], **_kwargs: Any) -> FakeRun:
-        # Pick the longest matching key prefix
         match: FakeRun | None = None
         match_len = -1
-        for key, val in plan.items():
+        for key, val in fixture.plan.items():
             if tuple(argv[: len(key)]) == key and len(key) > match_len:
                 match = val
                 match_len = len(key)
         if match is None:
             match = FakeRun(stdout="", returncode=0)
-        calls.append((argv, match))
+        fixture.calls.append(argv)
         return match
 
     from cyberm4fia_wifi.core import adapter
 
     monkeypatch.setattr(adapter, "_run", run)
-    monkeypatch.setattr(adapter, "_subprocess_plan", plan)
-    yield calls
-
-
-def _plan(monkeypatch: pytest.MonkeyPatch, items: dict[tuple[str, ...], FakeRun]) -> None:
-    from cyberm4fia_wifi.core import adapter
-
-    monkeypatch.setattr(adapter, "_subprocess_plan", items)
+    yield fixture
 
 
 class TestAdapterMatrix:
@@ -110,13 +107,8 @@ class TestAdapterMatrix:
 
 
 class TestDetectAdapters:
-    def test_detects_two_known_chipsets(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        fake_subprocess: list[tuple[list[str], FakeRun]],
-    ) -> None:
-        _plan(
-            monkeypatch,
+    def test_detects_two_known_chipsets(self, fake_subprocess: FakeSubprocess) -> None:
+        fake_subprocess.plan.update(
             {
                 ("iw", "dev"): FakeRun(stdout=_IW_DEV_TWO_IFACES),
                 ("udevadm", "info", "-q", "property", "/sys/class/net/wlan0/device"): FakeRun(
@@ -125,7 +117,7 @@ class TestDetectAdapters:
                 ("udevadm", "info", "-q", "property", "/sys/class/net/wlan1/device"): FakeRun(
                     stdout=_UDEVADM_RTL8812AU
                 ),
-            },
+            }
         )
 
         found = detect_adapters()
@@ -136,20 +128,15 @@ class TestDetectAdapters:
         assert ifaces == ["wlan0", "wlan1"]
 
     def test_unknown_vendor_returns_generic_profile(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        fake_subprocess: list[tuple[list[str], FakeRun]],
+        self, fake_subprocess: FakeSubprocess
     ) -> None:
-        _plan(
-            monkeypatch,
+        fake_subprocess.plan.update(
             {
                 ("iw", "dev"): FakeRun(
-                    stdout=(
-                        "phy#0\n\tInterface wlan0\n\t\tifindex 3\n\t\ttype managed\n"
-                    )
+                    stdout="phy#0\n\tInterface wlan0\n\t\tifindex 3\n\t\ttype managed\n"
                 ),
                 ("udevadm",): FakeRun(stdout="ID_VENDOR_ID=ffff\nID_MODEL_ID=ffff\n"),
-            },
+            }
         )
 
         found = detect_adapters()
@@ -158,50 +145,30 @@ class TestDetectAdapters:
         assert found[0].profile.name == "generic"
         assert found[0].profile.injection_unverified is True
 
-    def test_no_interfaces_returns_empty(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        fake_subprocess: list[tuple[list[str], FakeRun]],
-    ) -> None:
-        _plan(monkeypatch, {("iw", "dev"): FakeRun(stdout="")})
+    def test_no_interfaces_returns_empty(self, fake_subprocess: FakeSubprocess) -> None:
+        fake_subprocess.plan[("iw", "dev")] = FakeRun(stdout="")
 
         assert detect_adapters() == []
 
 
 class TestAdapterManager:
     def test_enter_monitor_mode_parses_new_iface_name(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        fake_subprocess: list[tuple[list[str], FakeRun]],
+        self, fake_subprocess: FakeSubprocess
     ) -> None:
         profile: AdapterProfile = ADAPTERS[(0x0CF3, 0x9271)]
-        _plan(
-            monkeypatch,
-            {
-                ("airmon-ng", "start", "wlan0"): FakeRun(stdout=_AIRMON_START_OK),
-            },
-        )
+        fake_subprocess.plan[("airmon-ng", "start", "wlan0")] = FakeRun(stdout=_AIRMON_START_OK)
 
         mgr = AdapterManager(iface="wlan0", profile=profile)
         mon_iface = mgr.enter_monitor_mode()
 
         assert mon_iface == "wlan0mon"
-        argv_set = [tuple(call[0]) for call in fake_subprocess]
+        argv_set = [tuple(call) for call in fake_subprocess.calls]
         assert ("airmon-ng", "start", "wlan0") in argv_set
 
-    def test_failed_monitor_mode_raises(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        fake_subprocess: list[tuple[list[str], FakeRun]],
-    ) -> None:
+    def test_failed_monitor_mode_raises(self, fake_subprocess: FakeSubprocess) -> None:
         profile = ADAPTERS[(0x0CF3, 0x9271)]
-        _plan(
-            monkeypatch,
-            {
-                ("airmon-ng", "start", "wlan0"): FakeRun(
-                    stdout="", stderr="device busy", returncode=1
-                ),
-            },
+        fake_subprocess.plan[("airmon-ng", "start", "wlan0")] = FakeRun(
+            stdout="", stderr="device busy", returncode=1
         )
 
         mgr = AdapterManager(iface="wlan0", profile=profile)
@@ -209,22 +176,19 @@ class TestAdapterManager:
             mgr.enter_monitor_mode()
 
     def test_restore_calls_airmon_stop_on_monitor_iface(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        fake_subprocess: list[tuple[list[str], FakeRun]],
+        self, fake_subprocess: FakeSubprocess
     ) -> None:
         profile = ADAPTERS[(0x0CF3, 0x9271)]
-        _plan(
-            monkeypatch,
+        fake_subprocess.plan.update(
             {
                 ("airmon-ng", "start", "wlan0"): FakeRun(stdout=_AIRMON_START_OK),
                 ("airmon-ng", "stop", "wlan0mon"): FakeRun(stdout=""),
-            },
+            }
         )
 
         mgr = AdapterManager(iface="wlan0", profile=profile)
         mgr.enter_monitor_mode()
         mgr.restore()
 
-        argvs = [tuple(call[0]) for call in fake_subprocess]
+        argvs = [tuple(call) for call in fake_subprocess.calls]
         assert ("airmon-ng", "stop", "wlan0mon") in argvs

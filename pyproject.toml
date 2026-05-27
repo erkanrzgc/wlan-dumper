@@ -51,6 +51,7 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
 addopts = "-ra --strict-markers --strict-config"
 markers = [
     "live_rf: tests that require a real radio (skipped in CI)",
