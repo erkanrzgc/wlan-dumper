@@ -253,3 +253,50 @@ authoritative tree.
 ## License
 
 MIT. See `LICENSE` (to be added in Phase 1.1 packaging pass).
+
+---
+
+## Phase 2a — Capture a Handshake
+
+```bash
+# From inside the scan TUI:
+./cyberm4fia.sh scan
+# arrow keys to pick the AP, then press 'h'
+# fill the modal (Reason is required), Start.
+
+# Or one-shot via the CLI (no TUI):
+./cyberm4fia.sh handshake \
+    --target AA:BB:CC:DD:EE:01 \
+    --client 11:22:33:44:55:66 \
+    --reason "my own router, lab test"
+```
+
+Output lands in `captures/handshakes/`:
+
+```
+captures/handshakes/MyHome_aabbccddee01_20260527-142315.pcap
+captures/handshakes/MyHome_aabbccddee01_20260527-142315.22000   # if hcxpcapngtool installed
+```
+
+### Phase 2a — Manual RF Acceptance Checklist
+
+Run against your own router. Tests cannot exercise the real radio path.
+
+- [ ] `./cyberm4fia.sh handshake --target <own router> --reason "..."` produces a `.pcap` ≥ 1 KB.
+- [ ] The same run also writes a `.22000` if `hcxpcapngtool` is installed.
+- [ ] Independent `hcxpcapngtool` re-run accepts the `.pcap` as a valid handshake.
+- [ ] In the TUI, pressing `h` opens the modal; submit runs end-to-end; cancel closes cleanly without leaving the radio locked.
+- [ ] Live Events panel shows `[deauth]` then `[eapol]` then `[handshake]` lines in order.
+- [ ] AP Details panel `Handshakes` counter increments after a successful capture.
+- [ ] Audit log gets one line per `deauth` and one per `handshake` invocation.
+- [ ] An AP with MFP=required produces a blocked Start button until the Override checkbox is set.
+
+### hcxpcapngtool
+
+Install with:
+
+```bash
+sudo apt install hcxtools
+```
+
+If absent, the tool still saves the `.pcap` and writes a one-time WARN to the log; you can convert manually later.
