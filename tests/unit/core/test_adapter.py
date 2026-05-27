@@ -56,6 +56,20 @@ phy0    wlan0           ath9k_htc       Qualcomm Atheros AR9271
                 (mac80211 station mode vif disabled for [phy0]wlan0)
 """
 
+_IW_DEV_WLAN0MON_MONITOR = """\
+phy#0
+\tInterface wlan0mon
+\t\tifindex 6
+\t\ttype monitor
+"""
+
+_IW_DEV_WLAN0_INPLACE_MONITOR = """\
+phy#0
+\tInterface wlan0
+\t\tifindex 3
+\t\ttype monitor
+"""
+
 
 @dataclass
 class FakeRun:
@@ -163,6 +177,7 @@ class TestAdapterManager:
     ) -> None:
         profile: AdapterProfile = ADAPTERS[(0x0CF3, 0x9271)]
         fake_subprocess.plan[("airmon-ng", "start", "wlan0")] = FakeRun(stdout=_AIRMON_START_OK)
+        fake_subprocess.plan[("iw", "dev")] = FakeRun(stdout=_IW_DEV_WLAN0MON_MONITOR)
 
         mgr = AdapterManager(iface="wlan0", profile=profile)
         mon_iface = mgr.enter_monitor_mode()
@@ -170,6 +185,19 @@ class TestAdapterManager:
         assert mon_iface == "wlan0mon"
         argv_set = [tuple(call) for call in fake_subprocess.calls]
         assert ("airmon-ng", "start", "wlan0") in argv_set
+
+    def test_enter_monitor_mode_when_driver_keeps_name(
+        self, fake_subprocess: FakeSubprocess
+    ) -> None:
+        """rtl88x2bu / mt76 case: airmon-ng flips type in place, no rename."""
+        profile = ADAPTERS[(0x0BDA, 0xB812)]
+        fake_subprocess.plan[("airmon-ng", "start", "wlan0")] = FakeRun(stdout="")
+        fake_subprocess.plan[("iw", "dev")] = FakeRun(stdout=_IW_DEV_WLAN0_INPLACE_MONITOR)
+
+        mgr = AdapterManager(iface="wlan0", profile=profile)
+        mon_iface = mgr.enter_monitor_mode()
+
+        assert mon_iface == "wlan0"  # name preserved
 
     def test_failed_monitor_mode_raises(self, fake_subprocess: FakeSubprocess) -> None:
         profile = ADAPTERS[(0x0CF3, 0x9271)]
@@ -188,6 +216,7 @@ class TestAdapterManager:
         fake_subprocess.plan.update(
             {
                 ("airmon-ng", "start", "wlan0"): FakeRun(stdout=_AIRMON_START_OK),
+                ("iw", "dev"): FakeRun(stdout=_IW_DEV_WLAN0MON_MONITOR),
                 ("airmon-ng", "stop", "wlan0mon"): FakeRun(stdout=""),
             }
         )

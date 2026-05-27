@@ -186,6 +186,23 @@ _AIRMON_NEW_IFACE_RE = re.compile(
     r"monitor mode vif enabled for \[phy\d+\](\w+) on \[phy\d+\](\w+)"
 )
 
+# Parses `iw dev` to discover the current interface name + its type. Some
+# drivers (rtl88x2bu, mt76, ...) leave the interface name unchanged after
+# airmon-ng start and only flip the type to monitor — the parsed name from
+# airmon-ng's stdout then doesn't correspond to a real device.
+_IW_DEV_BLOCK_RE = re.compile(
+    r"Interface\s+(\S+).*?type\s+(\S+)",
+    re.DOTALL,
+)
+
+
+def _monitor_ifaces() -> list[str]:
+    """Return every interface currently in monitor type, from ``iw dev``."""
+    res = _run(["iw", "dev"])
+    if res.returncode != 0:
+        return []
+    return [name for (name, kind) in _IW_DEV_BLOCK_RE.findall(res.stdout) if kind == "monitor"]
+
 
 @dataclass(slots=True)
 class AdapterManager:
@@ -201,10 +218,30 @@ class AdapterManager:
                 f"airmon-ng start {self.iface} failed (rc={res.returncode}): "
                 f"{(res.stderr or res.stdout).strip()}"
             )
-        m = _AIRMON_NEW_IFACE_RE.search(res.stdout or "")
-        # Heuristic fallback if airmon-ng's output format changes: many drivers
-        # just append "mon" to the original iface name.
-        mon_iface = m.group(2) if m else f"{self.iface}mon"
+
+        # Resolution order:
+        # 1. Ask `iw dev` for whatever is currently in monitor type — that's
+        #    the authoritative source. Some drivers (rtl88x2bu, mt76 family)
+        #    leave the interface name unchanged after airmon-ng start and
+        #    only flip the type; the name parsed from airmon-ng's stdout
+        #    then points at a device that does not exist.
+        # 2. Parse airmon-ng's stdout if iw didn't surface anything (older
+        #    drivers create a separate vif and stdout is the only signal).
+        # 3. Last-resort heuristic: <iface>mon.
+        monitors = _monitor_ifaces()
+        if self.iface in monitors:
+            mon_iface = self.iface
+        elif monitors:
+            mon_iface = monitors[0]
+        else:
+            m = _AIRMON_NEW_IFACE_RE.search(res.stdout or "")
+            mon_iface = m.group(2) if m else f"{self.iface}mon"
+            if mon_iface not in _monitor_ifaces():
+                raise AdapterError(
+                    f"airmon-ng reported success but no monitor-mode interface "
+                    f"is present (expected {mon_iface!r}). 'iw dev' output:\n"
+                    f"{_run(['iw', 'dev']).stdout}"
+                )
         self.monitor_iface = mon_iface
         if not self._atexit_registered:
             atexit.register(self._atexit_restore)
