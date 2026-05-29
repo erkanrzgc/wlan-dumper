@@ -1,6 +1,6 @@
 """Plugin contract and runtime context.
 
-Every plugin lives in its own module under ``cyberm4fia_wifi.plugins`` and
+Every plugin lives in its own module under ``wlan_dumper.plugins`` and
 implements the ``Plugin`` ABC. Plugins are registered in the static
 ``REGISTRY`` list in ``plugins/__init__.py`` for Phase 1; entry-point
 discovery lands in Phase 2 when there are multiple plugins.
@@ -20,10 +20,10 @@ from typing import Any
 
 import click
 
-from cyberm4fia_wifi.core.adapter import DetectedAdapter
-from cyberm4fia_wifi.core.auth import AuthorizationGate, PluginRisk
-from cyberm4fia_wifi.core.events import EventBus
-from cyberm4fia_wifi.core.session import Session
+from wlan_dumper.core.adapter import DetectedAdapter
+from wlan_dumper.core.auth import AuthorizationGate, PluginRisk
+from wlan_dumper.core.events import EventBus
+from wlan_dumper.core.session import Session
 
 
 @dataclass

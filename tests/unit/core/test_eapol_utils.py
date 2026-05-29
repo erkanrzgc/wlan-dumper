@@ -7,7 +7,7 @@ import pytest
 scapy = pytest.importorskip("scapy.all")
 from scapy.all import EAPOL  # noqa: E402
 
-from cyberm4fia_wifi.utils.eapol import message_index  # noqa: E402
+from wlan_dumper.utils.eapol import message_index  # noqa: E402
 
 # Practical Key Information patterns per IEEE 802.11-2016 §12.7.6.
 M1_KEY_INFO = 0x008A  # version=2, type=pairwise, ack=1
@@ -37,7 +37,7 @@ class TestMessageIndex:
         assert message_index(_make_key_frame(M4_KEY_INFO)) == 4
 
     def test_non_eapol_returns_none(self) -> None:
-        from scapy.all import Ether, IP
+        from scapy.all import IP, Ether
 
         pkt = Ether() / IP(dst="1.1.1.1")
         assert message_index(pkt) is None

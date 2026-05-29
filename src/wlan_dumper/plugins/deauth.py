@@ -12,16 +12,16 @@ from typing import Any
 
 import click
 
-from cyberm4fia_wifi.core.auth import AuthorizationGate, PluginRisk
-from cyberm4fia_wifi.core.events import DeauthSent, EventBus
-from cyberm4fia_wifi.plugins.base import Plugin, PluginContext
+from wlan_dumper.core.auth import AuthorizationGate, PluginRisk
+from wlan_dumper.core.events import DeauthSent, EventBus
+from wlan_dumper.plugins.base import Plugin, PluginContext
 
 _BROADCAST = "ff:ff:ff:ff:ff:ff"
 
 
 def _build_frame(*, src_bssid: str, dst: str) -> Any:
     """Construct one RadioTap+Dot11 deauth frame. Reason 7 = class-3 frame."""
-    import scapy.all as s  # noqa: PLC0415
+    import scapy.all as s
 
     return s.RadioTap() / s.Dot11(
         type=0, subtype=12,
@@ -57,7 +57,7 @@ class DeauthPlugin(Plugin):
             count: int,
             note: str | None,
         ) -> None:
-            from cyberm4fia_wifi.cli import build_runtime_for  # noqa: PLC0415
+            from wlan_dumper.cli import build_runtime_for
 
             runtime = build_runtime_for(ctx)
             target_station = (
@@ -87,7 +87,7 @@ class DeauthPlugin(Plugin):
     ) -> int:
         gate.check(plugin=self.name, risk=self.risk, target=target_bssid, reason=reason)
 
-        import scapy.all as s  # noqa: PLC0415
+        import scapy.all as s
 
         dst = (target_station or _BROADCAST).lower()
         src = target_bssid.lower()

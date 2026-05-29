@@ -8,8 +8,8 @@ from collections.abc import Iterable
 
 import pytest
 
-from cyberm4fia_wifi.core.events import ChannelChanged, EventBus
-from cyberm4fia_wifi.core.hopper import (
+from wlan_dumper.core.events import ChannelChanged, EventBus
+from wlan_dumper.core.hopper import (
     DEFAULT_2GHZ_CHANNELS,
     DEFAULT_5GHZ_CHANNELS,
     ChannelHopper,

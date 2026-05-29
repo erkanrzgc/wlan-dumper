@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from cyberm4fia_wifi.core.events import BeaconSeen, ClientSeen
-from cyberm4fia_wifi.core.session import Session
-from cyberm4fia_wifi.utils.oui import is_locally_administered, oui_for
+from wlan_dumper.core.events import BeaconSeen, ClientSeen
+from wlan_dumper.core.session import Session
+from wlan_dumper.utils.oui import is_locally_administered, oui_for
 
 
 class TestOuiLookup:

@@ -7,16 +7,16 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from cyberm4fia_wifi import cli as cli_module
-from cyberm4fia_wifi.cli import main
-from cyberm4fia_wifi.core.adapter import ADAPTERS, DetectedAdapter
-from cyberm4fia_wifi.core.auth import AuthzConfig
+from wlan_dumper import cli as cli_module
+from wlan_dumper.cli import main
+from wlan_dumper.core.adapter import ADAPTERS, DetectedAdapter
+from wlan_dumper.core.auth import AuthzConfig
 
 
 @pytest.fixture
 def cli_env(tmp_config_home: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Acknowledge the gate up-front so root-callback prompts don't block tests."""
-    from cyberm4fia_wifi.core.auth import AuthorizationGate
+    from wlan_dumper.core.auth import AuthorizationGate
 
     gate = AuthorizationGate.from_xdg()
     AuthzConfig(acknowledged_at="2026-05-27T00:00:00Z").dump(gate.config_path)

@@ -16,7 +16,7 @@ from typing import Any
 
 
 def _scapy() -> Any:
-    import scapy.all  # noqa: PLC0415
+    import scapy.all
 
     return scapy.all
 
@@ -30,7 +30,7 @@ _SECURE = 1 << 9
 def message_index(pkt: Any) -> int | None:
     """Return 1, 2, 3, or 4 for a WPA 4-way handshake key frame; None otherwise."""
     s = _scapy()
-    EAPOL = s.EAPOL  # noqa: N806
+    EAPOL = s.EAPOL
     if not pkt.haslayer(EAPOL):
         return None
 

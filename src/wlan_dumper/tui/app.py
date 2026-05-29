@@ -2,7 +2,7 @@
 
 Layout (top to bottom):
 
-    Header (cyberm4fia-dumper)
+    Header (wlan-dumper)
     Status bar (slim, two lines)
     +------------------------------------------------------------------+
     |  Access Points (full width)                                      |
@@ -30,7 +30,7 @@ from textual.containers import Container, Horizontal, Vertical
 from textual.css.query import NoMatches
 from textual.widgets import DataTable, Footer, Header, Log, Static
 
-from cyberm4fia_wifi.core.events import (
+from wlan_dumper.core.events import (
     BeaconSeen,
     ChannelChanged,
     ClientSeen,
@@ -41,9 +41,9 @@ from cyberm4fia_wifi.core.events import (
     HandshakeComplete,
     ProbeSeen,
 )
-from cyberm4fia_wifi.core.hopper import ChannelHopper
-from cyberm4fia_wifi.core.session import APRecord, Session
-from cyberm4fia_wifi.utils.oui import is_locally_administered, oui_for
+from wlan_dumper.core.hopper import ChannelHopper
+from wlan_dumper.core.session import APRecord, Session
+from wlan_dumper.utils.oui import is_locally_administered, oui_for
 
 _REFRESH_INTERVAL = 0.25
 _LOG_MAX_LINES = 500
@@ -112,7 +112,7 @@ def _band_for(channel: int) -> str:
 
 
 class ScanApp(App[None]):
-    TITLE = "cyberm4fia-dumper"
+    TITLE = "wlan-dumper"
     SUB_TITLE = "live 802.11 scan"
 
     # No background/color overrides — let the terminal palette win.
@@ -631,7 +631,7 @@ class ScanApp(App[None]):
         )
         if ap is None:
             return
-        from cyberm4fia_wifi.tui.modals import HandshakeModal
+        from wlan_dumper.tui.modals import HandshakeModal
 
         clients = [c.station for c in self._session.clients_of(ap.bssid)]
         captured = ap
@@ -656,7 +656,7 @@ class ScanApp(App[None]):
         )
 
     def _launch_handshake_worker(self, ap: APRecord, req: Any) -> None:
-        from cyberm4fia_wifi.plugins.handshake import HandshakePlugin
+        from wlan_dumper.plugins.handshake import HandshakePlugin
 
         plugin = HandshakePlugin()
         self.notify(
@@ -699,7 +699,7 @@ _ENC_STYLES = {
 
 
 def _resolve_gate():
-    from cyberm4fia_wifi.core.auth import AuthorizationGate
+    from wlan_dumper.core.auth import AuthorizationGate
 
     return AuthorizationGate.from_xdg()
 

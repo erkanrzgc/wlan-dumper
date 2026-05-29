@@ -23,7 +23,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from cyberm4fia_wifi.core.events import (
+from wlan_dumper.core.events import (
     BeaconSeen,
     ClientSeen,
     EAPOLCapture,
@@ -128,8 +128,8 @@ def _extract_encryption(pkt: Any) -> str:
 def _has_wps_ie(elt: Any) -> bool:
     """True iff a Wi-Fi Protected Setup IE (vendor specific OUI 0x0050F2, type 0x04) is present."""
     try:
-        Dot11Elt = _scapy().Dot11Elt  # noqa: N806
-        Dot11EltVendorSpecific = _scapy().Dot11EltVendorSpecific  # noqa: N806
+        Dot11Elt = _scapy().Dot11Elt
+        Dot11EltVendorSpecific = _scapy().Dot11EltVendorSpecific
     except AttributeError:
         return False
     while elt is not None:
@@ -149,7 +149,7 @@ def _mfp_status(pkt: Any) -> str:
     ``unknown`` otherwise.
     """
     try:
-        Dot11EltRSN = getattr(_scapy(), "Dot11EltRSN", None)  # noqa: N806
+        Dot11EltRSN = getattr(_scapy(), "Dot11EltRSN", None)
     except AttributeError:
         return "unknown"
     if Dot11EltRSN is None:
@@ -213,7 +213,7 @@ def dissect_packet(pkt: Any, *, now: float | None = None) -> list[Event]:
 
     EAPOL = getattr(s, "EAPOL", None)
     if EAPOL is not None and pkt.haslayer(EAPOL):
-        from cyberm4fia_wifi.utils.eapol import message_index  # noqa: PLC0415
+        from wlan_dumper.utils.eapol import message_index
 
         bssid = (dot11.addr3 or dot11.addr1 or "").lower()
         station = (dot11.addr2 or "").lower()

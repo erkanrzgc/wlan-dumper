@@ -1,6 +1,6 @@
 """CLI entry point.
 
-Top-level group ``cyberm4fia``. Plugins register their own subcommands via
+Top-level group ``wlan-dumper``. Plugins register their own subcommands via
 ``REGISTRY[*].register_cli(main)``. The root callback wires the authorization
 gate (``ensure_acknowledged``) and exposes global flags through the Click
 context so plugins can read them.
@@ -17,10 +17,10 @@ from dataclasses import dataclass
 
 import click
 
-from cyberm4fia_wifi.core.adapter import DetectedAdapter, detect_adapters
-from cyberm4fia_wifi.core.auth import AuthorizationGate, AuthzError
-from cyberm4fia_wifi.core.events import EventBus
-from cyberm4fia_wifi.core.session import Session
+from wlan_dumper.core.adapter import DetectedAdapter, detect_adapters
+from wlan_dumper.core.auth import AuthorizationGate, AuthzError
+from wlan_dumper.core.events import EventBus
+from wlan_dumper.core.session import Session
 
 
 @dataclass
@@ -38,9 +38,9 @@ def _ctx_obj(ctx: click.Context) -> dict[str, object]:
 
 
 @click.group(
-    name="cyberm4fia",
+    name="wlan-dumper",
     help=(
-        "cyberm4fia-dumper: WiFi cracking toolkit — scan, deauth, capture "
+        "wlan-dumper: WiFi cracking toolkit — scan, deauth, capture "
         "WPA handshakes, and crack them."
     ),
 )
@@ -101,7 +101,7 @@ def build_runtime_for(ctx: click.Context) -> Runtime:
 
     preferred = obj.get("iface")
     adapters = detect_adapters()
-    from cyberm4fia_wifi.plugins.scan import interactive_pick_adapter  # avoid cycle
+    from wlan_dumper.plugins.scan import interactive_pick_adapter  # avoid cycle
 
     adapter = interactive_pick_adapter(
         adapters,
@@ -117,7 +117,7 @@ def build_runtime_for(ctx: click.Context) -> Runtime:
 
 # Register every plugin's subcommand(s).
 def _wire_plugins() -> None:
-    from cyberm4fia_wifi.plugins import REGISTRY
+    from wlan_dumper.plugins import REGISTRY
 
     for plugin in REGISTRY:
         plugin.register_cli(main)

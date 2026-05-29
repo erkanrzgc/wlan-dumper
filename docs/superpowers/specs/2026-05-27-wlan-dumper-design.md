@@ -1,4 +1,4 @@
-# cyberm4fia-wifi — Design Spec
+# wlan-dumper — Design Spec
 
 **Date:** 2026-05-27
 **Status:** Approved (brainstorm complete, implementation plan pending)
@@ -8,7 +8,7 @@
 
 ## 1. Purpose
 
-A single Python tool that combines the airodump-ng (scan / display) and aircrack-ng (crack) workflows into one cohesive, branded experience under the `cyberm4fia` namespace, with future extensions for Evil Twin and a crunch/john-style wordlist generator. The tool targets a general-purpose audience (own networks, authorized pentest engagements, and CTF/educational use), with explicit per-mode authorization guards because the active and high-risk plugins (deauth, Evil Twin) can affect real users on real networks.
+A single Python tool that combines the airodump-ng (scan / display) and aircrack-ng (crack) workflows into one cohesive, branded experience under the `wlan-dumper` namespace, with future extensions for Evil Twin and a crunch/john-style wordlist generator. The tool targets a general-purpose audience (own networks, authorized pentest engagements, and CTF/educational use), with explicit per-mode authorization guards because the active and high-risk plugins (deauth, Evil Twin) can affect real users on real networks.
 
 ## 2. Non-Goals
 
@@ -19,7 +19,7 @@ A single Python tool that combines the airodump-ng (scan / display) and aircrack
 
 ## 3. User Personas & Use Modes
 
-The tool supports a single `mode` setting, persisted in `~/.config/cyberm4fia/authz.yaml`:
+The tool supports a single `mode` setting, persisted in `~/.config/wlan-dumper/authz.yaml`:
 
 | Mode | Who | Scope of allowed actions |
 |------|-----|---------------------------|
@@ -28,7 +28,7 @@ The tool supports a single `mode` setting, persisted in `~/.config/cyberm4fia/au
 | `ctf` | Educational / CTF lab | Like `lab` but every active/high-risk action is appended to an audit log |
 | `general` | Default | Passive scan free; active/high-risk plugins require per-BSSID acknowledgment each session |
 
-The mode is chosen at first launch via a CLI prompt and can be changed with `cyberm4fia config mode <mode>`.
+The mode is chosen at first launch via a CLI prompt and can be changed with `wlan-dumper config mode <mode>`.
 
 ## 4. Hardware Targets
 
@@ -48,7 +48,7 @@ Other chipsets are not blocked; the detector falls back to a generic `AdapterPro
 ```
 +--------------------------------------------------------+
 |                       CLI (Click)                      |
-|  cyberm4fia [scan|deauth|pmkid|wps|crack|evil|word|.]  |
+|  wlan-dumper [scan|deauth|pmkid|wps|crack|evil|word|.]  |
 +--------------------+-----------------------------------+
                      |
            +---------v---------+
@@ -70,13 +70,13 @@ Other chipsets are not blocked; the detector falls back to a generic `AdapterPro
            +-------------------+
 ```
 
-### 5.2 Module Responsibilities (`src/cyberm4fia_wifi/`)
+### 5.2 Module Responsibilities (`src/wlan_dumper/`)
 
 - `cli.py` — Click entrypoint. Mounts every plugin's subcommand via the plugin registry. Handles global flags (`--iface`, `--mode`, `--config`, `--verbose`).
 - `core/adapter.py` — USB enumeration via `iw dev` + `udevadm info`; maintains the `ADAPTERS` capability matrix; toggles monitor mode via `airmon-ng start` and registers an `atexit` restore.
 - `core/hopper.py` — Configurable channel hopping (2.4 GHz: 1–14; 5 GHz: 36–165 subject to regdomain). Per-channel dwell time, pluggable hop strategy (round-robin or weighted-by-AP-density).
 - `core/sniffer.py` — Wraps `scapy.AsyncSniffer`, dissects 802.11 frames (beacon, probe req/resp, auth, assoc, EAPOL), emits events. Filters by interface and (optionally) by BSSID list.
-- `core/session.py` — In-memory authoritative state: `APs`, `Clients`, `Handshakes`, `Cracked`. Optional JSON persistence to `~/.local/share/cyberm4fia/sessions/<ts>.json`.
+- `core/session.py` — In-memory authoritative state: `APs`, `Clients`, `Handshakes`, `Cracked`. Optional JSON persistence to `~/.local/share/wlan-dumper/sessions/<ts>.json`.
 - `core/auth.py` — `AuthorizationGate.check(plugin, target)`; reads `authz.yaml`; writes `audit.log`. Refuses high-risk plugins without the `--i-am-authorized-to-do-this "<reason>"` flag.
 - `core/events.py` — Tiny pub/sub bus; events: `BeaconSeen`, `ClientSeen`, `EAPOLCapture`, `PMKIDFound`, `ChannelChanged`, `PluginStarted`, `PluginFinished`, `PluginError`.
 - `tui/app.py` — Textual `App`. Subscribes to `EventBus`, renders three panels (AP table, selected-AP detail/clients, log).
@@ -147,7 +147,7 @@ Session.handshakes
 
 This tool can perform actions that affect real networks and real users. Misuse is illegal in most jurisdictions. The authorization gate is the technical expression of that boundary.
 
-- First launch: a four-line legal acknowledgment + `y/N` prompt. The acknowledgment timestamp and chosen mode are stored in `~/.config/cyberm4fia/authz.yaml`.
+- First launch: a four-line legal acknowledgment + `y/N` prompt. The acknowledgment timestamp and chosen mode are stored in `~/.config/wlan-dumper/authz.yaml`.
 - `authz.yaml` schema:
 
   ```yaml
@@ -158,7 +158,7 @@ This tool can perform actions that affect real networks and real users. Misuse i
     - AA:BB:CC:DD:EE:02
   ```
 - Plugins with `risk: high` (see §5.4) require `--i-am-authorized-to-do-this "<free-text reason>"`. The reason is recorded verbatim in the audit log.
-- Audit log location: `~/.local/share/cyberm4fia/audit.log`. Line format:
+- Audit log location: `~/.local/share/wlan-dumper/audit.log`. Line format:
 
   ```
   2026-05-27T05:35:12Z mode=pentest plugin=deauth target=AA:BB:CC:DD:EE:01 reason="engagement #4711 phase 2"
@@ -176,7 +176,7 @@ This tool can perform actions that affect real networks and real users. Misuse i
 ## 9. TUI Layout
 
 ```
-+- cyberm4fia-wifi ------------------------------------------------+
++- wlan-dumper ------------------------------------------------+
 | [F1]Help [F2]Sort [F3]Filter [F4]LockCH [F5]Pause [F10]Quit      |
 +------------------------------------------------------------------+
 | iface: wlan0mon  driver: ath9k_htc  CH: 6 (hop)  mode: general   |
@@ -233,10 +233,10 @@ Each phase ships independently with its own implementation plan and manual-RF ac
 ## 13. Repository Layout
 
 ```
-cyberm4fia-wifi/
-|-- pyproject.toml              # entry point: cyberm4fia = cyberm4fia_wifi.cli:main
+wlan-dumper/
+|-- pyproject.toml              # entry point: wlan-dumper = wlan_dumper.cli:main
 |-- README.md                   # authorization warning + adapter setup
-|-- src/cyberm4fia_wifi/
+|-- src/wlan_dumper/
 |   |-- __init__.py
 |   |-- cli.py
 |   |-- core/
@@ -267,7 +267,7 @@ cyberm4fia-wifi/
 `-- docs/
     `-- superpowers/
         `-- specs/
-            `-- 2026-05-27-cyberm4fia-wifi-design.md
+            `-- 2026-05-27-wlan-dumper-design.md
 ```
 
 ## 14. Dependencies

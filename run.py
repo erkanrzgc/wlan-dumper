@@ -7,8 +7,8 @@ Usage:
     python3 run.py --help
 
 This is just a 3-line shim that puts ``src/`` on PYTHONPATH and calls the
-real CLI in ``src/cyberm4fia_wifi/cli.py``. After ``pip install -e .`` you
-can also use the installed ``cyberm4fia`` command directly — both paths
+real CLI in ``src/wlan_dumper/cli.py``. After ``pip install -e .`` you
+can also use the installed ``wlan-dumper`` command directly — both paths
 end up at the same code.
 """
 
@@ -19,7 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
-from cyberm4fia_wifi.cli import main  # noqa: E402
+from wlan_dumper.cli import main  # noqa: E402
 
 if __name__ == "__main__":
     main()

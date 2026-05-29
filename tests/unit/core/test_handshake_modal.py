@@ -8,7 +8,7 @@ textual = pytest.importorskip("textual")
 
 from textual.app import App  # noqa: E402
 
-from cyberm4fia_wifi.tui.modals import HandshakeModal  # noqa: E402
+from wlan_dumper.tui.modals import HandshakeModal  # noqa: E402
 
 
 class _Harness(App):
@@ -59,7 +59,7 @@ async def test_modal_warns_when_mfp_required() -> None:
 
 
 def test_positive_int_falls_back_on_garbage() -> None:
-    from cyberm4fia_wifi.tui.modals import _positive_int
+    from wlan_dumper.tui.modals import _positive_int
 
     assert _positive_int("8", default=99) == 8
     assert _positive_int("", default=99) == 99

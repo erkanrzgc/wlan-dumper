@@ -1,9 +1,9 @@
-# cyberm4fia-wifi — Phase 2a Design Spec
+# wlan-dumper — Phase 2a Design Spec
 
 **Date:** 2026-05-27
 **Phase:** 2a of 4 (Active actions — deauth + handshake capture)
 **Status:** Approved (brainstorm complete, implementation plan pending)
-**Prior art:** `2026-05-27-cyberm4fia-wifi-design.md` (overall four-phase plan)
+**Prior art:** `2026-05-27-wlan-dumper-design.md` (overall four-phase plan)
 
 ---
 
@@ -72,7 +72,7 @@ PMKID, WPS, and Evil Twin are intentionally out of scope here and are scheduled 
 Equivalent CLI (automation):
 
 ```
-./cyberm4fia.sh handshake \
+./wlan-dumper.sh handshake \
     --target AA:BB:CC:DD:EE:01 \
     --client 11:22:33:44:55:66 \
     --count 8 --timeout 60 \
@@ -82,7 +82,7 @@ Equivalent CLI (automation):
 Standalone `deauth` (without capture):
 
 ```
-./cyberm4fia.sh deauth \
+./wlan-dumper.sh deauth \
     --target AA:BB:CC:DD:EE:01 \
     --client 11:22:33:44:55:66 --count 8 \
     --reason "..."
@@ -280,7 +280,7 @@ diagnosis.
 
 - **MFP `required` AP without operator override** → modal blocks Start, toast: "MFP is required on this AP; deauth will be ignored. Check Override to try anyway."
 - **Adapter without injection support** (`profile.injection == False`) → `deauth` plugin refuses early with `ClickException`, points the operator at the adapter list. `handshake` with `auto_deauth=False` still runs.
-- **scapy `sendp` permission denied** (non-root) → clean error, suggests `./cyberm4fia.sh ...` wrapper.
+- **scapy `sendp` permission denied** (non-root) → clean error, suggests `./wlan-dumper.sh ...` wrapper.
 - **`hcxpcapngtool` missing** → one-time WARN, `.pcap` still saved, `HandshakeComplete.hashcat_path = None`. Operator can convert later.
 - **Timeout reached without `{1,2,3,4}`** → `HandshakeComplete(valid_by_hcxtool=False)` if `{1,2}` exists (partial may still be crackable), or `PluginError` if nothing captured. Either way the partial pcap is kept.
 - **Plugin crash** → caught at the top-level handler (existing pattern), audit-logged, sniffer + hopper restored.
@@ -306,7 +306,7 @@ CI thresholds remain per-package as set in Phase 1 (`pytest --cov` enforces
 
 ## 9. Manual RF Acceptance Checklist (Phase 2a)
 
-- [ ] `./cyberm4fia.sh handshake --target <own router> --reason "..."` produces a `.pcap` ≥ 1 KB in `captures/handshakes/`.
+- [ ] `./wlan-dumper.sh handshake --target <own router> --reason "..."` produces a `.pcap` ≥ 1 KB in `captures/handshakes/`.
 - [ ] The same run also writes a `.22000` if `hcxpcapngtool` is installed.
 - [ ] `hcxpcapngtool` round-trip: independently re-run on the `.pcap` accepts it as a valid handshake.
 - [ ] TUI: pressing `h` opens the modal; cancelling closes cleanly; submitting runs end-to-end without leaving the radio in monitor mode if the operator aborts mid-capture.
@@ -336,7 +336,7 @@ CI thresholds remain per-package as set in Phase 1 (`pytest --cov` enforces
 ## 12. Files Affected
 
 ```
-src/cyberm4fia_wifi/
+src/wlan_dumper/
    core/events.py            modified  (+DeauthSent, +HandshakeComplete, +mfp on BeaconSeen)
    core/sniffer.py           modified  (+EAPOL branch, +MFP parse)
    core/session.py           modified  (+handshake_count, +mfp_status, +HandshakeComplete handler)
@@ -359,7 +359,7 @@ tests/unit/core/
    test_sniffer.py           modified  (+EAPOL + MFP fixtures)
    test_session.py           modified  (+handshake counter + mfp persistence)
 
-docs/superpowers/specs/2026-05-27-cyberm4fia-wifi-phase2a-design.md  (this file)
+docs/superpowers/specs/2026-05-27-wlan-dumper-phase2a-design.md  (this file)
 README.md                    modified  (+Phase 2a quickstart + acceptance checklist)
 captures/handshakes/         exists from Phase 1; runtime artifacts go here
 ```

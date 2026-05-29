@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from cyberm4fia_wifi.utils import hcxtools
+from wlan_dumper.utils import hcxtools
 
 
 class _FakeRun:

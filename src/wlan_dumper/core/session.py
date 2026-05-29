@@ -23,7 +23,7 @@ from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-from cyberm4fia_wifi.core.events import (
+from wlan_dumper.core.events import (
     BeaconSeen,
     ChannelChanged,
     ClientSeen,

@@ -1,303 +1,161 @@
-# cyberm4fia-dumper
+<div align="center">
 
-> ⚠️ **Legal notice.** This tool transmits 802.11 frames (deauthentication) and captures
-> wireless traffic. Using it against networks you do not own or do not have explicit, written
-> permission to test is illegal in most jurisdictions. You are responsible for compliance.
+# wlan-dumper
 
-A Python WiFi cracking toolkit that fuses the airodump-ng (live scan) and aircrack-ng
-(offline crack) workflows into a single plugin-extensible CLI with a Textual TUI:
-**scan → deauth → capture WPA handshakes → crack.**
+**A terminal WiFi cracking toolkit — scan → deauth → capture WPA handshakes → crack.**
 
-| Phase | Status | Scope |
-|-------|--------|-------|
-| 1 | ✅ shipped | scan + display (passive, no frames transmitted) |
-| 2a | ✅ shipped | deauth + handshake capture (.pcap + .22000) |
-| 2b | planned | PMKID + WPS |
-| 3 | planned | crack engine (aircrack-ng / hashcat) + Evil Twin |
-| 4 | planned | crunch / john-style wordlist generator |
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Built with Textual](https://img.shields.io/badge/TUI-Textual-5a4fcf.svg)](https://textual.textualize.io/)
+[![scapy](https://img.shields.io/badge/802.11-scapy-orange.svg)](https://scapy.net/)
+[![Platform: Linux](https://img.shields.io/badge/platform-Linux-lightgrey.svg)](#requirements)
+[![Tests](https://img.shields.io/badge/tests-136%20passing-brightgreen.svg)](#development)
+[![Status](https://img.shields.io/badge/status-pre--alpha-yellow.svg)](#roadmap)
 
-See [`docs/superpowers/specs/2026-05-27-cyberm4fia-wifi-design.md`](docs/superpowers/specs/2026-05-27-cyberm4fia-wifi-design.md) for the full design.
+</div>
 
----
-
-## TL;DR — just run it
-
-There are two files at the top of the repo you actually launch:
-
-| File | What it does |
-|------|--------------|
-| `run.py` | Python entry point. `python3 run.py adapters` or `python3 run.py scan`. Calls into the real CLI in `src/cyberm4fia_wifi/`. |
-| `cyberm4fia.sh` | One-shot launcher for the live scan. Re-execs under sudo if needed, detaches `wlan0` from NetworkManager, runs the scan, and restores NM on exit. |
-
-```bash
-# List detected adapters (no root, no NM detach):
-python3 run.py adapters
-
-# Live scan + TUI — does the whole sudo / NM dance for you:
-./cyberm4fia.sh scan
-
-# Different interface? Override IFACE:
-IFACE=wlan1 ./cyberm4fia.sh scan
-```
-
-Inside the TUI: arrow keys to pick an AP, **F4** to lock on its channel,
-**F5** pause, **F2** sort, **F3** filter, **q** quit.
-
-If you'd rather have a proper `cyberm4fia` command on your `$PATH`,
-`pipx install --editable .` and use it directly — that path ends up at
-the same code.
+> ⚠️ **Legal notice.** `wlan-dumper` transmits 802.11 frames (deauthentication) and
+> captures wireless traffic. Using it against networks you do not own or do not have
+> explicit, written permission to test is **illegal** in most jurisdictions. You are
+> solely responsible for compliance. The authors accept no liability for misuse.
 
 ---
 
-## Install
+`wlan-dumper` brings the classic `airodump-ng` → `aireplay-ng` → `aircrack-ng` workflow
+into a single, keyboard-driven terminal app. Point it at a wireless adapter, watch
+nearby access points and their clients populate a live table, lock onto a target, and
+capture a WPA handshake — then hand it off to `hashcat`/`aircrack-ng` to crack.
 
-Tested on **Kali Linux 2024.x** (Debian-derived distros should work the same). Root is required
-because monitor mode and raw 802.11 socket access need it.
+It is built as a small **plugin-based** core (adapter management, channel hopping,
+802.11 dissection, an event bus, and a session store) with a [Textual](https://textual.textualize.io/)
+TUI on top. Each capability — scan, deauth, handshake capture — is an isolated plugin,
+so the suite grows without entangling the core.
 
-### 1. System packages
+## Features
+
+- **Live scan TUI** — access points with PWR, signal bars, channel, encryption,
+  vendor (OUI), beacon/data counts, WPS and handshake flags; per-AP client lists; a
+  columnar event log.
+- **Dual-band** 2.4 GHz + 5 GHz channel hopping with channel lock, quarantine of
+  dead channels, and regulatory-domain awareness.
+- **Adapter auto-detection** — a live-refreshing picker lists wireless interfaces with
+  chipset, driver, bands and injection capability; plug an adapter in mid-session and
+  it appears automatically.
+- **Deauthentication** — forge deauth bursts against a client or broadcast to provoke
+  a reconnect.
+- **WPA handshake capture** — native M1–M4 state machine for live progress, written to
+  `captures/handshakes/<essid>_<bssid>_<ts>.pcap`, auto-converted to hashcat's
+  `.22000` format when `hcxtools` is present.
+- **MFP awareness** — detects 802.11w Management Frame Protection and warns when deauth
+  is unlikely to work.
+- **NetworkManager handling** — detaches the chosen interface on entry and restores it
+  on exit, so monitor mode doesn't fight your desktop.
+
+## Requirements
+
+- **Linux** (developed and tested on Kali). A wireless adapter that supports **monitor
+  mode** (and **packet injection** for deauth/handshake capture).
+- **Python 3.11+** and `root` (monitor mode + raw 802.11 sockets need it).
+- System tools: `aircrack-ng`, `iw`. Optional but recommended: `hcxtools` (for `.22000`
+  conversion), `hashcat` (GPU cracking).
 
 ```bash
 sudo apt update
-sudo apt install -y \
-    aircrack-ng \
-    iw \
-    pipx \
-    python3-venv
+sudo apt install -y aircrack-ng iw python3-venv
+sudo apt install -y hcxtools hashcat        # optional, for the crack stage
 ```
 
-Optional for later phases (the tool already supports a runtime check and will warn if missing):
+> **Adapter drivers.** Atheros AR9271 (`ath9k_htc`) works out of the box. Realtek
+> chipsets (RTL8812AU / RTL8814AU / RTL88x2BU) usually need an out-of-tree DKMS driver
+> such as `realtek-rtl88xxau-dkms`.
+
+## Installation
 
 ```bash
-sudo apt install -y hashcat hcxtools reaver bully hostapd dnsmasq
-```
+git clone https://github.com/erkanrzgc/wlan-dumper.git
+cd wlan-dumper
 
-### 2. Adapter driver (only if you use the Realtek RTL8812AU)
-
-The Atheros AR9271 (e.g. TL-WN722N v1, zSecurity adapter) runs out of the box on Kali via the
-mainline `ath9k_htc` driver. The Realtek RTL8812AU (AC1300-class, often sold on Trendyol) needs
-the DKMS driver:
-
-```bash
-sudo apt install -y realtek-rtl88xxau-dkms linux-headers-$(uname -r)
-```
-
-Reboot or `sudo modprobe 88XXau` afterwards. Verify with:
-
-```bash
-lsmod | grep -E '88XXau|ath9k_htc'
-```
-
-### 3. Install cyberm4fia-dumper
-
-```bash
-git clone https://github.com/erkanrzgc/cyberm4fia-dumper.git
-cd cyberm4fia-dumper
-pipx install --editable .[dev]
-```
-
-`pipx` creates an isolated venv and exposes the `cyberm4fia` entry point on your PATH. If you
-prefer a manual venv:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
+# Run straight from a checkout:
+python3 -m venv .venv && source .venv/bin/activate
 pip install -e '.[dev]'
 ```
 
----
+Or install it onto your PATH with [pipx](https://pipx.pypa.io/):
+
+```bash
+pipx install --editable .
+```
 
 ## Quickstart
 
 ```bash
-# 1. Verify your adapters are detected (no root needed)
-cyberm4fia adapters
+# 1. List detected wireless adapters (no root needed):
+python3 run.py adapters
 
-# 2. First-launch authorization prompt — pick a mode and acknowledge
-sudo -E cyberm4fia adapters
+# 2. Live scan + TUI — the launcher handles sudo + NetworkManager for you:
+./wlan-dumper.sh scan
 
-# 3. Start a live scan (root needed for monitor mode)
-sudo -E cyberm4fia scan
+# Pick a specific interface:
+IFACE=wlan1 ./wlan-dumper.sh scan
 ```
 
-`sudo -E` preserves the `XDG_*` env vars so the authorization config and audit log stay under
-your user account, not under `/root/`.
+After `pip install`/`pipx`, the `wlan-dumper` command is available directly
+(e.g. `sudo -E wlan-dumper scan`).
 
-### Keybinds
-
-While the TUI is running:
+### In the scan TUI
 
 | Key | Action |
 |-----|--------|
-| F1 | Help overlay (placeholder for Phase 2) |
-| F2 | Cycle sort column (PWR → CH → ESSID → #Beacon) |
-| F3 | Toggle filter (substring on BSSID / ESSID) |
-| F4 | Lock hopper on the highlighted AP's channel / unlock to resume |
-| F5 | Pause / resume refresh |
-| F10 or q | Quit (restores the interface) |
+| `↑ ↓` | Select an access point |
+| `Enter` / click | Inspect the AP (details + its clients) |
+| `F2` | Cycle sort column |
+| `F3` | Toggle filter |
+| `F4` | Lock / unlock the hopper on the selected AP's channel |
+| `F5` | Pause / resume |
+| `h` | Capture handshake (opens a target dialog with auto-deauth) |
+| `d` | Deauth helper |
+| `c` / `a` | Focus the Clients / Access Points table |
+| `q` | Quit (restores the interface) |
 
-Mouse: click a row in the AP table to populate the clients panel for that AP.
+Pressing `h` automatically locks the channel, fires the deauth burst (if enabled), and
+listens for the 4-way handshake — you do **not** need to lock manually first. Results
+land in `captures/handshakes/`.
 
----
+## Roadmap
 
-## Authorization modes
-
-Set the first time you run any subcommand and persisted at
-`$XDG_CONFIG_HOME/cyberm4fia/authz.yaml` (default: `~/.config/cyberm4fia/authz.yaml`).
-
-| Mode | Who | Active / high-risk actions |
-|------|-----|----------------------------|
-| `lab` | You own everything in radio range | All allowed without per-target prompts |
-| `pentest` | Signed engagement | Allowed **only** against BSSIDs in the whitelist |
-| `ctf` | Educational / CTF lab | Allowed; every action logged |
-| `general` | Default | Passive scan free; active actions require per-target `--target <BSSID>` |
-
-Switch later by editing the YAML directly. Phase 1 only invokes `risk: passive` actions, so the
-mode does not change behavior yet — but it locks in your choice for Phase 2+.
-
-Audit log: `$XDG_DATA_HOME/cyberm4fia/audit.log` (default: `~/.local/share/cyberm4fia/audit.log`).
-Empty after Phase 1 scans; Phase 2 active actions will append one line per call.
-
----
-
-## Phase 1 — Manual RF Acceptance Checklist
-
-Automated tests cannot exercise a real radio. Run this checklist with each adapter before
-tagging Phase 1 complete on your environment.
-
-**AR9271 (2.4 GHz only)**
-
-- [ ] `cyberm4fia adapters` lists `wlan0  AR9271  driver=ath9k_htc  bands=2.4`
-- [ ] `sudo -E cyberm4fia scan` enters monitor mode and shows `iface: wlan0mon` in the header
-- [ ] Channels 1–13 visibly hop in the header (`CH:` changes about 4× per second)
-- [ ] Beacons from a known SSID appear in the AP table within 5 s of launch
-- [ ] Selecting that AP populates the clients panel with at least one station (a phone works)
-- [ ] `F4` locks the channel; the locked AP's beacon count keeps rising while others freeze
-- [ ] `F4` again unlocks; hopping resumes
-- [ ] `F3` filter narrows the AP list correctly
-- [ ] `q` and `Ctrl+C` both exit cleanly; `iw dev` post-exit shows no leftover `wlan0mon`
-
-**RTL8812AU (2.4 + 5 GHz)**
-
-- [ ] `cyberm4fia adapters` lists `wlan1  RTL8812AU  driver=88XXau  bands=2.4+5`
-- [ ] `sudo -E cyberm4fia --iface wlan1 scan` enters monitor mode
-- [ ] The hopper visits both 2.4 GHz (1–13) and 5 GHz (36–48, 149–165) channels
-- [ ] At least one 5 GHz AP appears (if one is in range)
-- [ ] Exit restores the interface
-
-**Authorization gate**
-
-- [ ] First run shows the legal notice exactly once, asks for mode, then for `y/N`
-- [ ] `authz.yaml` is written after acknowledgment; subsequent runs do not re-prompt
-- [ ] Audit log file does **not** exist or is empty after passive-only scans
-
----
-
-## Troubleshooting
-
-**"no wireless adapters detected"**
-Check the radio is plugged in and the driver is loaded:
-```bash
-lsusb | grep -iE 'atheros|realtek'
-ip link show
-dmesg | tail -30
-```
-For RTL8812AU specifically: `sudo modprobe 88XXau` and confirm `lsmod | grep 88XXau`.
-
-**"airmon-ng start wlan0 failed (rc=…): device busy"**
-NetworkManager or `wpa_supplicant` is holding the interface. Either:
-```bash
-sudo systemctl stop NetworkManager wpa_supplicant
-```
-or run `sudo airmon-ng check kill` once before `cyberm4fia scan`. Phase 1 deliberately does
-**not** kill these processes automatically; that lands as an opt-in `--kill-conflicting-procs`
-flag in Phase 2.
-
-**"channel hop failed"**
-A specific channel is failing the `iw set channel` call. The hopper quarantines it after 3
-failures in a row, so the loop keeps moving — but if every channel fails, you're probably not
-in monitor mode. Check with `iw dev wlan0mon info` (expect `type monitor`).
-
-**"scapy permission denied"**
-You launched without `sudo`. Re-run with `sudo -E cyberm4fia scan`.
-
-**Realtek breaks after a kernel update**
-DKMS modules need to be rebuilt for the new kernel:
-```bash
-sudo apt install --reinstall linux-headers-$(uname -r) realtek-rtl88xxau-dkms
-sudo dkms autoinstall
-```
-
----
+| Stage | Status | Scope |
+|-------|--------|-------|
+| Scan + display | ✅ shipped | live 802.11 scan, TUI, adapter picker |
+| Deauth + handshake | ✅ shipped | deauth bursts, WPA handshake capture (`.pcap` + `.22000`) |
+| PMKID + WPS | 🚧 planned | clientless PMKID, WPS attacks |
+| Crack engine | 🚧 planned | integrated `aircrack-ng` / `hashcat` dispatch |
+| Wordlist generator | 🚧 planned | `crunch` / rule-based candidate generation |
 
 ## Development
 
 ```bash
-# Run the full test suite
-pytest -q
+pip install -e '.[dev]'
 
-# Lint + format check
-ruff check . && ruff format --check .
-
-# Strict type-check on the core engine
-mypy src/cyberm4fia_wifi/core
-
-# Coverage report (HTML in htmlcov/)
-pytest --cov --cov-report=html
+pytest -q                       # run the test suite (136 tests)
+ruff check . && ruff format .   # lint + format
+mypy src/wlan_dumper            # type-check the core
 ```
 
-Project layout follows the spec exactly — see
-[§13 of the design](docs/superpowers/specs/2026-05-27-cyberm4fia-wifi-design.md) for the
-authoritative tree.
+Architecture lives under `src/wlan_dumper/`:
 
----
+```
+core/      adapter detection · channel hopper · 802.11 sniffer · session store · event bus
+plugins/   scan · deauth · handshake  (each a self-contained Plugin)
+tui/       Textual app + modals
+utils/     EAPOL parsing · pcap writer · hcxtools wrapper · OUI lookup · paths
+```
 
 ## License
 
-MIT. See `LICENSE` (to be added in Phase 1.1 packaging pass).
+[MIT](LICENSE) © erkanrzgc
 
 ---
 
-## Phase 2a — Capture a Handshake
-
-```bash
-# From inside the scan TUI:
-./cyberm4fia.sh scan
-# arrow keys to pick the AP, then press 'h'
-# fill the modal (Reason is required), Start.
-
-# Or one-shot via the CLI (no TUI):
-./cyberm4fia.sh handshake \
-    --target AA:BB:CC:DD:EE:01 \
-    --client 11:22:33:44:55:66 \
-    --reason "my own router, lab test"
-```
-
-Output lands in `captures/handshakes/`:
-
-```
-captures/handshakes/MyHome_aabbccddee01_20260527-142315.pcap
-captures/handshakes/MyHome_aabbccddee01_20260527-142315.22000   # if hcxpcapngtool installed
-```
-
-### Phase 2a — Manual RF Acceptance Checklist
-
-Run against your own router. Tests cannot exercise the real radio path.
-
-- [ ] `./cyberm4fia.sh handshake --target <own router> --reason "..."` produces a `.pcap` ≥ 1 KB.
-- [ ] The same run also writes a `.22000` if `hcxpcapngtool` is installed.
-- [ ] Independent `hcxpcapngtool` re-run accepts the `.pcap` as a valid handshake.
-- [ ] In the TUI, pressing `h` opens the modal; submit runs end-to-end; cancel closes cleanly without leaving the radio locked.
-- [ ] Live Events panel shows `[deauth]` then `[eapol]` then `[handshake]` lines in order.
-- [ ] AP Details panel `Handshakes` counter increments after a successful capture.
-- [ ] Audit log gets one line per `deauth` and one per `handshake` invocation.
-- [ ] An AP with MFP=required produces a blocked Start button until the Override checkbox is set.
-
-### hcxpcapngtool
-
-Install with:
-
-```bash
-sudo apt install hcxtools
-```
-
-If absent, the tool still saves the `.pcap` and writes a one-time WARN to the log; you can convert manually later.
+<div align="center">
+<sub>For authorized security testing and education only.</sub>
+</div>

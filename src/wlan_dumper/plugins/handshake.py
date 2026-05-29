@@ -14,17 +14,17 @@ from pathlib import Path
 
 import click
 
-from cyberm4fia_wifi.core.auth import AuthorizationGate, PluginRisk
-from cyberm4fia_wifi.core.events import (
+from wlan_dumper.core.auth import AuthorizationGate, PluginRisk
+from wlan_dumper.core.events import (
     EAPOLCapture,
     EventBus,
     HandshakeComplete,
 )
-from cyberm4fia_wifi.plugins.base import Plugin, PluginContext
-from cyberm4fia_wifi.plugins.deauth import DeauthPlugin
-from cyberm4fia_wifi.utils.hcxtools import convert_to_22000
-from cyberm4fia_wifi.utils.paths import handshake_path
-from cyberm4fia_wifi.utils.pcap_writer import append_packets
+from wlan_dumper.plugins.base import Plugin, PluginContext
+from wlan_dumper.plugins.deauth import DeauthPlugin
+from wlan_dumper.utils.hcxtools import convert_to_22000
+from wlan_dumper.utils.paths import handshake_path
+from wlan_dumper.utils.pcap_writer import append_packets
 
 
 class HandshakePlugin(Plugin):
@@ -62,7 +62,7 @@ class HandshakePlugin(Plugin):
             timeout: int,
             note: str | None,
         ) -> None:
-            from cyberm4fia_wifi.cli import build_runtime_for  # noqa: PLC0415
+            from wlan_dumper.cli import build_runtime_for
 
             runtime = build_runtime_for(ctx)
             target_station = None if client.lower() == "broadcast" else client
@@ -158,11 +158,11 @@ class HandshakePlugin(Plugin):
 
         # Persist every frame so even partial captures are diagnostically
         # useful.
-        import scapy.all as s  # noqa: PLC0415
+        import scapy.all as s
 
         try:
             wrapped = s.Ether(evt.raw)
-        except Exception:  # noqa: BLE001 — fall back to raw bytes if scapy chokes
+        except Exception:
             wrapped = s.Raw(load=evt.raw)
         append_packets(self._pcap_path, [wrapped])
 

@@ -1,14 +1,14 @@
-# cyberm4fia-wifi Phase 2a Implementation Plan
+# wlan-dumper Phase 2a Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add `deauth` and `handshake` plugins to the existing scan TUI so the operator can capture a WPA 4-way handshake (raw `.pcap` + `.22000`) end-to-end from inside the TUI or via the CLI.
 
-**Architecture:** Two new plugin modules under `src/cyberm4fia_wifi/plugins/` plus a thin glue layer in the existing sniffer/session/TUI. `HandshakePlugin` composes `DeauthPlugin` when auto-deauth is requested; both share the existing `EventBus` + `AuthorizationGate`. Final handshake validation is delegated to `hcxpcapngtool` (subprocess); a native M1-M4 state machine drives the TUI progress display.
+**Architecture:** Two new plugin modules under `src/wlan_dumper/plugins/` plus a thin glue layer in the existing sniffer/session/TUI. `HandshakePlugin` composes `DeauthPlugin` when auto-deauth is requested; both share the existing `EventBus` + `AuthorizationGate`. Final handshake validation is delegated to `hcxpcapngtool` (subprocess); a native M1-M4 state machine drives the TUI progress display.
 
 **Tech Stack:** Python 3.11 · scapy 2.5 · Textual ≥ 0.50 · Click ≥ 8.1 · pytest · hcxpcapngtool (external, optional)
 
-**Spec:** [`docs/superpowers/specs/2026-05-27-cyberm4fia-wifi-phase2a-design.md`](../specs/2026-05-27-cyberm4fia-wifi-phase2a-design.md)
+**Spec:** [`docs/superpowers/specs/2026-05-27-wlan-dumper-phase2a-design.md`](../specs/2026-05-27-wlan-dumper-phase2a-design.md)
 
 ---
 
@@ -17,7 +17,7 @@
 Confirm the repo is on the latest `master`, Phase 1 tests pass, and `hcxpcapngtool` is on `$PATH` (or note its absence for the hcxtools tests).
 
 ```bash
-cd /home/erkanrzgc/cyberm4fia-wiFi-cracker
+cd /home/erkanrzgc/wlan-dumper
 git status                                   # expect: clean
 PYTHONPATH=src python3 -m pytest -q          # expect: 96 passed
 command -v hcxpcapngtool || echo "hcxpcapngtool missing (some integration tests will skip)"
@@ -28,7 +28,7 @@ command -v hcxpcapngtool || echo "hcxpcapngtool missing (some integration tests 
 ## Task 1: Evolve Event Contract (DeauthSent, HandshakeComplete, EAPOLCapture)
 
 **Files:**
-- Modify: `src/cyberm4fia_wifi/core/events.py`
+- Modify: `src/wlan_dumper/core/events.py`
 - Test: `tests/unit/core/test_events.py`
 
 - [ ] **Step 1: Write failing tests for the new event shapes**
@@ -38,7 +38,7 @@ Append to `tests/unit/core/test_events.py`:
 ```python
 class TestPhase2EventDataclasses:
     def test_deauth_sent_carries_burst_position(self) -> None:
-        from cyberm4fia_wifi.core.events import DeauthSent
+        from wlan_dumper.core.events import DeauthSent
 
         evt = DeauthSent(
             timestamp=1.0,
@@ -51,7 +51,7 @@ class TestPhase2EventDataclasses:
         assert evt.total == 8
 
     def test_deauth_sent_allows_broadcast(self) -> None:
-        from cyberm4fia_wifi.core.events import DeauthSent
+        from wlan_dumper.core.events import DeauthSent
 
         evt = DeauthSent(
             timestamp=1.0,
@@ -63,7 +63,7 @@ class TestPhase2EventDataclasses:
         assert evt.target_station is None
 
     def test_eapol_capture_carries_raw_bytes_and_optional_index(self) -> None:
-        from cyberm4fia_wifi.core.events import EAPOLCapture
+        from wlan_dumper.core.events import EAPOLCapture
 
         evt = EAPOLCapture(
             timestamp=1.0,
@@ -76,7 +76,7 @@ class TestPhase2EventDataclasses:
         assert evt.raw == b"\x00\x01\x02"
 
     def test_eapol_capture_message_index_may_be_none(self) -> None:
-        from cyberm4fia_wifi.core.events import EAPOLCapture
+        from wlan_dumper.core.events import EAPOLCapture
 
         evt = EAPOLCapture(
             timestamp=1.0,
@@ -88,7 +88,7 @@ class TestPhase2EventDataclasses:
         assert evt.message_index is None
 
     def test_handshake_complete_carries_artifact_paths(self) -> None:
-        from cyberm4fia_wifi.core.events import HandshakeComplete
+        from wlan_dumper.core.events import HandshakeComplete
 
         evt = HandshakeComplete(
             timestamp=1.0,
@@ -109,7 +109,7 @@ Expected: All five tests fail — `DeauthSent` / `HandshakeComplete` not importa
 
 - [ ] **Step 3: Add new events and refine `EAPOLCapture`**
 
-In `src/cyberm4fia_wifi/core/events.py`, replace the placeholder `EAPOLCapture` block and append the two new dataclasses:
+In `src/wlan_dumper/core/events.py`, replace the placeholder `EAPOLCapture` block and append the two new dataclasses:
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -156,7 +156,7 @@ Expected: All event tests pass (previous 16 + 5 new).
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/cyberm4fia_wifi/core/events.py tests/unit/core/test_events.py
+git add src/wlan_dumper/core/events.py tests/unit/core/test_events.py
 git commit -m "feat(core): add DeauthSent + HandshakeComplete; evolve EAPOLCapture
 
 EAPOLCapture's Phase-1 placeholder field (pcap_offset:int) is replaced
@@ -171,7 +171,7 @@ artifact paths and the hcxpcapngtool verdict."
 ## Task 2: EAPOL message-index parser (`utils/eapol.py`)
 
 **Files:**
-- Create: `src/cyberm4fia_wifi/utils/eapol.py`
+- Create: `src/wlan_dumper/utils/eapol.py`
 - Create: `tests/unit/core/test_eapol_utils.py`
 
 - [ ] **Step 1: Write failing tests**
@@ -188,7 +188,7 @@ import pytest
 scapy = pytest.importorskip("scapy.all")
 from scapy.all import EAPOL, Dot11, RadioTap  # noqa: E402
 
-from cyberm4fia_wifi.utils.eapol import message_index  # noqa: E402
+from wlan_dumper.utils.eapol import message_index  # noqa: E402
 
 # Key Information field (16 bits) constants per IEEE 802.11-2016 §12.7.6
 # bit layout (MSB → LSB):
@@ -238,11 +238,11 @@ class TestMessageIndex:
 - [ ] **Step 2: Run tests to verify failures**
 
 Run: `PYTHONPATH=src python3 -m pytest tests/unit/core/test_eapol_utils.py -v`
-Expected: All six fail with `ModuleNotFoundError: No module named 'cyberm4fia_wifi.utils.eapol'`.
+Expected: All six fail with `ModuleNotFoundError: No module named 'wlan_dumper.utils.eapol'`.
 
 - [ ] **Step 3: Implement the parser**
 
-Create `src/cyberm4fia_wifi/utils/eapol.py`:
+Create `src/wlan_dumper/utils/eapol.py`:
 
 ```python
 """EAPOL key-frame parsing — return the 4-way handshake message index.
@@ -316,7 +316,7 @@ Expected: All 6 pass.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/cyberm4fia_wifi/utils/eapol.py tests/unit/core/test_eapol_utils.py
+git add src/wlan_dumper/utils/eapol.py tests/unit/core/test_eapol_utils.py
 git commit -m "feat(utils): message_index parser for EAPOL key frames
 
 Decodes the Key Information field (IEEE 802.11-2016 §12.7.6) and
@@ -330,7 +330,7 @@ with scapy and assert each message_index in isolation."
 ## Task 3: pcap append-mode writer (`utils/pcap_writer.py`)
 
 **Files:**
-- Create: `src/cyberm4fia_wifi/utils/pcap_writer.py`
+- Create: `src/wlan_dumper/utils/pcap_writer.py`
 - Create: `tests/unit/core/test_pcap_writer.py`
 
 - [ ] **Step 1: Write failing tests**
@@ -349,7 +349,7 @@ import pytest
 scapy = pytest.importorskip("scapy.all")
 from scapy.all import Ether, IP, rdpcap  # noqa: E402
 
-from cyberm4fia_wifi.utils.pcap_writer import append_packets  # noqa: E402
+from wlan_dumper.utils.pcap_writer import append_packets  # noqa: E402
 
 
 def _pkt(payload: str) -> Ether:
@@ -391,7 +391,7 @@ Expected: All four fail with `ModuleNotFoundError`.
 
 - [ ] **Step 3: Implement the writer**
 
-Create `src/cyberm4fia_wifi/utils/pcap_writer.py`:
+Create `src/wlan_dumper/utils/pcap_writer.py`:
 
 ```python
 """Append-mode pcap writer.
@@ -437,7 +437,7 @@ Expected: All four pass.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/cyberm4fia_wifi/utils/pcap_writer.py tests/unit/core/test_pcap_writer.py
+git add src/wlan_dumper/utils/pcap_writer.py tests/unit/core/test_pcap_writer.py
 git commit -m "feat(utils): append-mode pcap writer with mkdir + fsync
 
 Wraps scapy.PcapWriter so the parent directory is created lazily, an
@@ -451,7 +451,7 @@ readable pcap for partial diagnosis."
 ## Task 4: hcxpcapngtool wrapper (`utils/hcxtools.py`)
 
 **Files:**
-- Create: `src/cyberm4fia_wifi/utils/hcxtools.py`
+- Create: `src/wlan_dumper/utils/hcxtools.py`
 - Create: `tests/unit/core/test_hcxtools.py`
 
 - [ ] **Step 1: Write failing tests**
@@ -467,7 +467,7 @@ from pathlib import Path
 
 import pytest
 
-from cyberm4fia_wifi.utils import hcxtools
+from wlan_dumper.utils import hcxtools
 
 
 class _FakeRun:
@@ -552,7 +552,7 @@ Expected: All four fail with `ModuleNotFoundError`.
 
 - [ ] **Step 3: Implement the wrapper**
 
-Create `src/cyberm4fia_wifi/utils/hcxtools.py`:
+Create `src/wlan_dumper/utils/hcxtools.py`:
 
 ```python
 """Thin wrapper around the external ``hcxpcapngtool`` binary.
@@ -608,7 +608,7 @@ Expected: All four pass.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/cyberm4fia_wifi/utils/hcxtools.py tests/unit/core/test_hcxtools.py
+git add src/wlan_dumper/utils/hcxtools.py tests/unit/core/test_hcxtools.py
 git commit -m "feat(utils): hcxpcapngtool subprocess wrapper
 
 Converts a captured .pcap to hashcat's .22000 format when the tool is
@@ -624,13 +624,13 @@ module-level indirections so unit tests never touch the real binary."
 ## Task 5: Sniffer EAPOL branch + MFP detection
 
 **Files:**
-- Modify: `src/cyberm4fia_wifi/core/sniffer.py`
-- Modify: `src/cyberm4fia_wifi/core/events.py` (add `mfp_status` to `BeaconSeen`)
+- Modify: `src/wlan_dumper/core/sniffer.py`
+- Modify: `src/wlan_dumper/core/events.py` (add `mfp_status` to `BeaconSeen`)
 - Modify: `tests/unit/core/test_sniffer.py`
 
 - [ ] **Step 1: Add `mfp_status` to `BeaconSeen`**
 
-In `src/cyberm4fia_wifi/core/events.py`, extend `BeaconSeen`:
+In `src/wlan_dumper/core/events.py`, extend `BeaconSeen`:
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -667,8 +667,8 @@ class TestEapolDissection:
             / eapol
         )
 
-        from cyberm4fia_wifi.core.events import EAPOLCapture
-        from cyberm4fia_wifi.core.sniffer import dissect_packet
+        from wlan_dumper.core.events import EAPOLCapture
+        from wlan_dumper.core.sniffer import dissect_packet
 
         evts = dissect_packet(pkt, now=100.0)
         eapol_evts = [e for e in evts if isinstance(e, EAPOLCapture)]
@@ -696,12 +696,12 @@ Expected: EAPOL test fails (no branch yet); MFP test passes (default already "un
 
 - [ ] **Step 4: Implement the EAPOL branch + MFP parse**
 
-In `src/cyberm4fia_wifi/core/sniffer.py`, in the `dissect_packet` function add a new branch *before* the existing data-frame handler:
+In `src/wlan_dumper/core/sniffer.py`, in the `dissect_packet` function add a new branch *before* the existing data-frame handler:
 
 ```python
     EAPOL = getattr(s, "EAPOL", None)
     if EAPOL is not None and pkt.haslayer(EAPOL):
-        from cyberm4fia_wifi.utils.eapol import message_index
+        from wlan_dumper.utils.eapol import message_index
 
         bssid = (dot11.addr3 or dot11.addr1 or "").lower()
         station = (dot11.addr2 or "").lower()
@@ -754,7 +754,7 @@ Wire it into the beacon `BeaconSeen` construction (next to `wps=...`):
 Make sure `EAPOLCapture` is imported at the top of `sniffer.py`:
 
 ```python
-from cyberm4fia_wifi.core.events import (
+from wlan_dumper.core.events import (
     BeaconSeen,
     ClientSeen,
     EAPOLCapture,
@@ -772,7 +772,7 @@ Expected: All 96 + 4 new pass.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/cyberm4fia_wifi/core/events.py src/cyberm4fia_wifi/core/sniffer.py tests/unit/core/test_sniffer.py
+git add src/wlan_dumper/core/events.py src/wlan_dumper/core/sniffer.py tests/unit/core/test_sniffer.py
 git commit -m "feat(core): emit EAPOLCapture + detect MFP from RSN Capabilities
 
 dissect_packet now has an EAPOL branch (before the generic data-frame
@@ -790,7 +790,7 @@ becomes the source of truth for the TUI's MFP warning."
 ## Task 6: Session — handshake count + MFP persistence + HandshakeComplete handler
 
 **Files:**
-- Modify: `src/cyberm4fia_wifi/core/session.py`
+- Modify: `src/wlan_dumper/core/session.py`
 - Modify: `tests/unit/core/test_session.py`
 
 - [ ] **Step 1: Write failing tests**
@@ -800,7 +800,7 @@ Append to `tests/unit/core/test_session.py`:
 ```python
 class TestHandshakeAndMfpFields:
     def test_handshake_complete_event_bumps_counter(self) -> None:
-        from cyberm4fia_wifi.core.events import HandshakeComplete
+        from wlan_dumper.core.events import HandshakeComplete
 
         sess = Session()
         sess.handle_event(_beacon())
@@ -819,7 +819,7 @@ class TestHandshakeAndMfpFields:
         assert ap.handshake_count == 1
 
     def test_mfp_status_promoted_from_beacon(self) -> None:
-        from cyberm4fia_wifi.core.events import BeaconSeen
+        from wlan_dumper.core.events import BeaconSeen
 
         sess = Session()
         sess.handle_event(
@@ -836,7 +836,7 @@ class TestHandshakeAndMfpFields:
         assert sess.aps_snapshot()[0].mfp_status == "required"
 
     def test_mfp_status_unknown_does_not_overwrite_known(self) -> None:
-        from cyberm4fia_wifi.core.events import BeaconSeen
+        from wlan_dumper.core.events import BeaconSeen
 
         sess = Session()
         sess.handle_event(
@@ -861,7 +861,7 @@ Expected: All three fail (`handshake_count`/`mfp_status` not on APRecord; Handsh
 
 - [ ] **Step 3: Extend `APRecord` and `Session`**
 
-In `src/cyberm4fia_wifi/core/session.py`:
+In `src/wlan_dumper/core/session.py`:
 
 Add fields to `APRecord`:
 
@@ -873,7 +873,7 @@ Add fields to `APRecord`:
 Extend `handle_event` to consume `HandshakeComplete`:
 
 ```python
-from cyberm4fia_wifi.core.events import (
+from wlan_dumper.core.events import (
     BeaconSeen,
     ChannelChanged,
     ClientSeen,
@@ -930,7 +930,7 @@ Expected: All pass.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/cyberm4fia_wifi/core/session.py tests/unit/core/test_session.py
+git add src/wlan_dumper/core/session.py tests/unit/core/test_session.py
 git commit -m "feat(core): Session learns handshake_count + mfp_status
 
 HandshakeComplete events bump the parent AP's handshake_count so the
@@ -945,8 +945,8 @@ rule we use for wps — an 'unknown' beacon never overwrites a known
 ## Task 7: `plugins/deauth.py` + CLI subcommand
 
 **Files:**
-- Create: `src/cyberm4fia_wifi/plugins/deauth.py`
-- Modify: `src/cyberm4fia_wifi/plugins/__init__.py` (REGISTRY)
+- Create: `src/wlan_dumper/plugins/deauth.py`
+- Modify: `src/wlan_dumper/plugins/__init__.py` (REGISTRY)
 - Create: `tests/unit/core/test_deauth_plugin.py`
 
 - [ ] **Step 1: Write failing tests**
@@ -962,9 +962,9 @@ import pytest
 
 scapy = pytest.importorskip("scapy.all")
 
-from cyberm4fia_wifi.core.auth import AuthorizationGate, AuthzConfig, Mode
-from cyberm4fia_wifi.core.events import DeauthSent, EventBus
-from cyberm4fia_wifi.plugins.deauth import DeauthPlugin
+from wlan_dumper.core.auth import AuthorizationGate, AuthzConfig, Mode
+from wlan_dumper.core.events import DeauthSent, EventBus
+from wlan_dumper.plugins.deauth import DeauthPlugin
 
 
 @pytest.fixture
@@ -1034,7 +1034,7 @@ class TestDeauthExecute:
     def test_requires_reason_via_auth_gate(
         self, tmp_config_home, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from cyberm4fia_wifi.core.auth import AuthzError
+        from wlan_dumper.core.auth import AuthzError
         _capture_sent(monkeypatch)
         gate = AuthorizationGate.from_xdg()
         gate.set_config(AuthzConfig(mode=Mode.LAB, acknowledged_at="x"))
@@ -1055,7 +1055,7 @@ Expected: All three fail with `ModuleNotFoundError`.
 
 - [ ] **Step 3: Implement the plugin**
 
-Create `src/cyberm4fia_wifi/plugins/deauth.py`:
+Create `src/wlan_dumper/plugins/deauth.py`:
 
 ```python
 """Deauth plugin — risk=high.
@@ -1072,9 +1072,9 @@ from typing import Any
 
 import click
 
-from cyberm4fia_wifi.core.auth import AuthorizationGate, PluginRisk
-from cyberm4fia_wifi.core.events import DeauthSent, EventBus
-from cyberm4fia_wifi.plugins.base import Plugin, PluginContext
+from wlan_dumper.core.auth import AuthorizationGate, PluginRisk
+from wlan_dumper.core.events import DeauthSent, EventBus
+from wlan_dumper.plugins.base import Plugin, PluginContext
 
 _BROADCAST = "ff:ff:ff:ff:ff:ff"
 
@@ -1111,7 +1111,7 @@ class DeauthPlugin(Plugin):
         )
         @click.pass_context
         def deauth_cmd(ctx: click.Context, target: str, client: str, count: int, reason: str) -> None:
-            from cyberm4fia_wifi.cli import build_runtime_for
+            from wlan_dumper.cli import build_runtime_for
 
             runtime = build_runtime_for(ctx)
             target_station = None if client.lower() in ("broadcast", "ff:ff:ff:ff:ff:ff") else client
@@ -1165,10 +1165,10 @@ class DeauthPlugin(Plugin):
 Add the plugin to the registry:
 
 ```python
-# src/cyberm4fia_wifi/plugins/__init__.py
-from cyberm4fia_wifi.plugins.base import Plugin, PluginContext
-from cyberm4fia_wifi.plugins.deauth import DeauthPlugin
-from cyberm4fia_wifi.plugins.scan import REGISTRY as _SCAN_REGISTRY, ScanPlugin
+# src/wlan_dumper/plugins/__init__.py
+from wlan_dumper.plugins.base import Plugin, PluginContext
+from wlan_dumper.plugins.deauth import DeauthPlugin
+from wlan_dumper.plugins.scan import REGISTRY as _SCAN_REGISTRY, ScanPlugin
 
 REGISTRY: list[Plugin] = list(_SCAN_REGISTRY) + [DeauthPlugin()]
 
@@ -1182,14 +1182,14 @@ Expected: All three pass.
 
 - [ ] **Step 5: Smoke-check the CLI surface**
 
-Run: `PYTHONPATH=src python3 -m cyberm4fia_wifi.cli deauth --help`
+Run: `PYTHONPATH=src python3 -m wlan_dumper.cli deauth --help`
 Expected: help text lists `--target`, `--client`, `--count`, `--reason`.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/cyberm4fia_wifi/plugins/deauth.py src/cyberm4fia_wifi/plugins/__init__.py tests/unit/core/test_deauth_plugin.py
-git commit -m "feat(plugins): DeauthPlugin + cyberm4fia deauth subcommand
+git add src/wlan_dumper/plugins/deauth.py src/wlan_dumper/plugins/__init__.py tests/unit/core/test_deauth_plugin.py
+git commit -m "feat(plugins): DeauthPlugin + wlan-dumper deauth subcommand
 
 Forges N RadioTap+Dot11+Dot11Deauth frames (reason=7) with the AP's
 BSSID spoofed in addr2/addr3 and the target STA (or broadcast) in
@@ -1208,8 +1208,8 @@ subcommand at startup."
 ## Task 8: `plugins/handshake.py` + CLI subcommand
 
 **Files:**
-- Create: `src/cyberm4fia_wifi/plugins/handshake.py`
-- Modify: `src/cyberm4fia_wifi/plugins/__init__.py` (REGISTRY)
+- Create: `src/wlan_dumper/plugins/handshake.py`
+- Modify: `src/wlan_dumper/plugins/__init__.py` (REGISTRY)
 - Create: `tests/unit/core/test_handshake_plugin.py`
 
 - [ ] **Step 1: Write failing tests**
@@ -1228,9 +1228,9 @@ import pytest
 scapy = pytest.importorskip("scapy.all")
 from scapy.all import Ether  # noqa: E402
 
-from cyberm4fia_wifi.core.auth import AuthorizationGate, AuthzConfig, Mode
-from cyberm4fia_wifi.core.events import EAPOLCapture, EventBus, HandshakeComplete
-from cyberm4fia_wifi.plugins.handshake import HandshakePlugin
+from wlan_dumper.core.auth import AuthorizationGate, AuthzConfig, Mode
+from wlan_dumper.core.events import EAPOLCapture, EventBus, HandshakeComplete
+from wlan_dumper.plugins.handshake import HandshakePlugin
 
 
 @pytest.fixture
@@ -1258,12 +1258,12 @@ class TestHandshakeStateMachine:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # Redirect captures dir to tmp_path
-        from cyberm4fia_wifi.utils import paths
+        from wlan_dumper.utils import paths
         monkeypatch.setattr(paths, "_CAPTURES", tmp_path / "captures")
 
         # Pretend hcxpcapngtool said "valid"
         monkeypatch.setattr(
-            "cyberm4fia_wifi.utils.hcxtools.convert_to_22000",
+            "wlan_dumper.utils.hcxtools.convert_to_22000",
             lambda p: p.with_suffix(".22000"),
         )
 
@@ -1296,7 +1296,7 @@ class TestHandshakeStateMachine:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from cyberm4fia_wifi.utils import paths
+        from wlan_dumper.utils import paths
         monkeypatch.setattr(paths, "_CAPTURES", tmp_path / "captures")
 
         bus = EventBus()
@@ -1323,10 +1323,10 @@ class TestHandshakeStateMachine:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from cyberm4fia_wifi.utils import paths
+        from wlan_dumper.utils import paths
         monkeypatch.setattr(paths, "_CAPTURES", tmp_path / "captures")
         monkeypatch.setattr(
-            "cyberm4fia_wifi.utils.hcxtools.convert_to_22000",
+            "wlan_dumper.utils.hcxtools.convert_to_22000",
             lambda p: p.with_suffix(".22000"),
         )
 
@@ -1355,7 +1355,7 @@ Expected: All three fail with `ModuleNotFoundError`.
 
 - [ ] **Step 3: Implement the plugin**
 
-Create `src/cyberm4fia_wifi/plugins/handshake.py`:
+Create `src/wlan_dumper/plugins/handshake.py`:
 
 ```python
 """Handshake plugin — risk=active, or risk=high when auto-deauth is on.
@@ -1375,17 +1375,17 @@ from typing import Any
 
 import click
 
-from cyberm4fia_wifi.core.auth import AuthorizationGate, PluginRisk
-from cyberm4fia_wifi.core.events import (
+from wlan_dumper.core.auth import AuthorizationGate, PluginRisk
+from wlan_dumper.core.events import (
     EAPOLCapture,
     EventBus,
     HandshakeComplete,
 )
-from cyberm4fia_wifi.plugins.base import Plugin, PluginContext
-from cyberm4fia_wifi.plugins.deauth import DeauthPlugin
-from cyberm4fia_wifi.utils.hcxtools import convert_to_22000
-from cyberm4fia_wifi.utils.paths import handshake_path
-from cyberm4fia_wifi.utils.pcap_writer import append_packets
+from wlan_dumper.plugins.base import Plugin, PluginContext
+from wlan_dumper.plugins.deauth import DeauthPlugin
+from wlan_dumper.utils.hcxtools import convert_to_22000
+from wlan_dumper.utils.paths import handshake_path
+from wlan_dumper.utils.pcap_writer import append_packets
 
 
 class HandshakePlugin(Plugin):
@@ -1424,7 +1424,7 @@ class HandshakePlugin(Plugin):
             timeout: int,
             reason: str,
         ) -> None:
-            from cyberm4fia_wifi.cli import build_runtime_for
+            from wlan_dumper.cli import build_runtime_for
 
             runtime = build_runtime_for(ctx)
             target_station = None if client.lower() == "broadcast" else client
@@ -1550,11 +1550,11 @@ class HandshakePlugin(Plugin):
 Add it to the registry:
 
 ```python
-# src/cyberm4fia_wifi/plugins/__init__.py
-from cyberm4fia_wifi.plugins.base import Plugin, PluginContext
-from cyberm4fia_wifi.plugins.deauth import DeauthPlugin
-from cyberm4fia_wifi.plugins.handshake import HandshakePlugin
-from cyberm4fia_wifi.plugins.scan import REGISTRY as _SCAN_REGISTRY, ScanPlugin
+# src/wlan_dumper/plugins/__init__.py
+from wlan_dumper.plugins.base import Plugin, PluginContext
+from wlan_dumper.plugins.deauth import DeauthPlugin
+from wlan_dumper.plugins.handshake import HandshakePlugin
+from wlan_dumper.plugins.scan import REGISTRY as _SCAN_REGISTRY, ScanPlugin
 
 REGISTRY: list[Plugin] = list(_SCAN_REGISTRY) + [DeauthPlugin(), HandshakePlugin()]
 
@@ -1568,13 +1568,13 @@ Expected: All three pass.
 
 - [ ] **Step 5: Smoke-check the CLI surface**
 
-Run: `PYTHONPATH=src python3 -m cyberm4fia_wifi.cli handshake --help`
+Run: `PYTHONPATH=src python3 -m wlan_dumper.cli handshake --help`
 Expected: help text lists `--target`, `--client`, `--no-deauth`, `--count`, `--timeout`, `--reason`.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/cyberm4fia_wifi/plugins/handshake.py src/cyberm4fia_wifi/plugins/__init__.py tests/unit/core/test_handshake_plugin.py
+git add src/wlan_dumper/plugins/handshake.py src/wlan_dumper/plugins/__init__.py tests/unit/core/test_handshake_plugin.py
 git commit -m "feat(plugins): HandshakePlugin with M1-M4 state machine
 
 Subscribes to EAPOLCapture, filters by target BSSID/STA, appends every
@@ -1587,7 +1587,7 @@ execute() re-runs the auth gate as risk=HIGH when auto_deauth=True;
 the child DeauthPlugin's own gate call would catch it too, but this
 prevents wasted radio time when the operator's reason is empty.
 
-Registered with the plugin registry so 'cyberm4fia handshake' lands."
+Registered with the plugin registry so 'wlan-dumper handshake' lands."
 ```
 
 ---
@@ -1595,7 +1595,7 @@ Registered with the plugin registry so 'cyberm4fia handshake' lands."
 ## Task 9: `tui/modals.py` HandshakeModal
 
 **Files:**
-- Create: `src/cyberm4fia_wifi/tui/modals.py`
+- Create: `src/wlan_dumper/tui/modals.py`
 - Create: `tests/unit/core/test_handshake_modal.py`
 
 - [ ] **Step 1: Write failing test**
@@ -1613,7 +1613,7 @@ textual = pytest.importorskip("textual")
 
 from textual.app import App
 
-from cyberm4fia_wifi.tui.modals import HandshakeModal, HandshakeRequest
+from wlan_dumper.tui.modals import HandshakeModal, HandshakeRequest
 
 
 class _Harness(App):
@@ -1662,7 +1662,7 @@ Expected: Both fail with `ModuleNotFoundError`.
 
 - [ ] **Step 3: Implement the modal**
 
-Create `src/cyberm4fia_wifi/tui/modals.py`:
+Create `src/wlan_dumper/tui/modals.py`:
 
 ```python
 """Confirm-action modals for risk=active/high plugins."""
@@ -1781,7 +1781,7 @@ Expected: Both pass.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/cyberm4fia_wifi/tui/modals.py tests/unit/core/test_handshake_modal.py
+git add src/wlan_dumper/tui/modals.py tests/unit/core/test_handshake_modal.py
 git commit -m "feat(tui): HandshakeModal confirm dialog
 
 ModalScreen subclass with seven inputs (target STA, auto-deauth,
@@ -1799,7 +1799,7 @@ operator can still submit but the audit log will reflect the choice."
 ## Task 10: TUI integration (`d`/`h` keybindings, action handlers, log formatters)
 
 **Files:**
-- Modify: `src/cyberm4fia_wifi/tui/app.py`
+- Modify: `src/wlan_dumper/tui/app.py`
 - Modify: `tests/unit/core/test_tui_smoke.py`
 
 - [ ] **Step 1: Write failing test**
@@ -1827,7 +1827,7 @@ Expected: FAIL — `d` / `h` not in bindings.
 
 - [ ] **Step 3: Add the bindings + actions**
 
-In `src/cyberm4fia_wifi/tui/app.py`, extend `BINDINGS`:
+In `src/wlan_dumper/tui/app.py`, extend `BINDINGS`:
 
 ```python
     BINDINGS = [
@@ -1845,7 +1845,7 @@ In `src/cyberm4fia_wifi/tui/app.py`, extend `BINDINGS`:
 Add the new event imports at the top of the file:
 
 ```python
-from cyberm4fia_wifi.core.events import (
+from wlan_dumper.core.events import (
     BeaconSeen,
     ChannelChanged,
     ClientSeen,
@@ -1893,7 +1893,7 @@ Add the two action handlers (at the bottom of the class):
         )
         if ap is None:
             return
-        from cyberm4fia_wifi.tui.modals import HandshakeModal
+        from wlan_dumper.tui.modals import HandshakeModal
 
         clients = [c.station for c in self._session.clients_of(ap.bssid)]
         req = await self.push_screen_wait(
@@ -1912,7 +1912,7 @@ Add the two action handlers (at the bottom of the class):
         if self._hopper is not None:
             self._hopper.lock(ap.channel)
 
-        from cyberm4fia_wifi.plugins.handshake import HandshakePlugin
+        from wlan_dumper.plugins.handshake import HandshakePlugin
 
         plugin = HandshakePlugin()
         # Run on a worker so we don't block the UI loop.
@@ -1939,7 +1939,7 @@ Add the two action handlers (at the bottom of the class):
         # the CLI for standalone deauth.
         self.notify(
             "Use 'h' for handshake (includes auto-deauth). "
-            "Standalone deauth via the CLI: cyberm4fia deauth ...",
+            "Standalone deauth via the CLI: wlan-dumper deauth ...",
             timeout=8,
         )
 ```
@@ -1948,7 +1948,7 @@ Add the `_resolve_gate` helper at module bottom (re-uses existing XDG constructi
 
 ```python
 def _resolve_gate():
-    from cyberm4fia_wifi.core.auth import AuthorizationGate
+    from wlan_dumper.core.auth import AuthorizationGate
 
     return AuthorizationGate.from_xdg()
 ```
@@ -1961,7 +1961,7 @@ Expected: All pass (existing 3 + new binding test).
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/cyberm4fia_wifi/tui/app.py tests/unit/core/test_tui_smoke.py
+git add src/wlan_dumper/tui/app.py tests/unit/core/test_tui_smoke.py
 git commit -m "feat(tui): wire d/h bindings, log formatters, handshake worker
 
 Pressing 'h' on a selected AP opens HandshakeModal; submit launches
@@ -1980,7 +1980,7 @@ so the operator can scan the log for state transitions at a glance."
 ## Task 11: AP Details panel — MFP + Handshakes rows
 
 **Files:**
-- Modify: `src/cyberm4fia_wifi/tui/app.py`
+- Modify: `src/wlan_dumper/tui/app.py`
 - Modify: `tests/unit/core/test_tui_smoke.py`
 
 - [ ] **Step 1: Write failing test**
@@ -1991,7 +1991,7 @@ Append to `tests/unit/core/test_tui_smoke.py`:
 @pytest.mark.asyncio
 async def test_ap_details_shows_mfp_and_handshake_count() -> None:
     sess = Session()
-    from cyberm4fia_wifi.core.events import BeaconSeen, HandshakeComplete
+    from wlan_dumper.core.events import BeaconSeen, HandshakeComplete
 
     sess.handle_event(
         BeaconSeen(
@@ -2035,7 +2035,7 @@ Expected: FAIL — neither row is rendered yet.
 
 - [ ] **Step 3: Extend `_format_details`**
 
-In `src/cyberm4fia_wifi/tui/app.py`, inside `_format_details`, append two new rows right before the final `("Seen", ...)` row. Locate the existing block ending with `("WPS", ...)` and add:
+In `src/wlan_dumper/tui/app.py`, inside `_format_details`, append two new rows right before the final `("Seen", ...)` row. Locate the existing block ending with `("WPS", ...)` and add:
 
 ```python
             "\n",
@@ -2062,7 +2062,7 @@ Expected: All pass.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/cyberm4fia_wifi/tui/app.py tests/unit/core/test_tui_smoke.py
+git add src/wlan_dumper/tui/app.py tests/unit/core/test_tui_smoke.py
 git commit -m "feat(tui): AP Details shows MFP status + handshake count
 
 Two new rows under the selected AP's details: MFP (red 'required',
@@ -2090,12 +2090,12 @@ Append to `README.md` after the existing Phase 1 acceptance checklist section:
 
 ```bash
 # From inside the scan TUI:
-./cyberm4fia.sh scan
+./wlan-dumper.sh scan
 # arrow keys to pick the AP, then press 'h'
 # fill the modal (Reason is required), Start.
 
 # Or one-shot via the CLI (no TUI):
-./cyberm4fia.sh handshake \
+./wlan-dumper.sh handshake \
     --target AA:BB:CC:DD:EE:01 \
     --client 11:22:33:44:55:66 \
     --reason "my own router, lab test"
@@ -2112,7 +2112,7 @@ captures/handshakes/MyHome_aabbccddee01_20260527-142315.22000   # if hcxpcapngto
 
 Run against your own router. Tests cannot exercise the real radio path.
 
-- [ ] `./cyberm4fia.sh handshake --target <own router> --reason "..."` produces a `.pcap` ≥ 1 KB.
+- [ ] `./wlan-dumper.sh handshake --target <own router> --reason "..."` produces a `.pcap` ≥ 1 KB.
 - [ ] The same run also writes a `.22000` if `hcxpcapngtool` is installed.
 - [ ] Independent `hcxpcapngtool` re-run accepts the `.pcap` as a valid handshake.
 - [ ] In the TUI, pressing `h` opens the modal; submit runs end-to-end; cancel closes cleanly without leaving the radio locked.
@@ -2152,9 +2152,9 @@ complete on their environment."
 
 ```bash
 PYTHONPATH=src python3 -m pytest -q
-PYTHONPATH=src python3 -m pytest --cov=src/cyberm4fia_wifi --cov-report=term-missing
+PYTHONPATH=src python3 -m pytest --cov=src/wlan_dumper --cov-report=term-missing
 ruff check . && ruff format --check .
-mypy src/cyberm4fia_wifi/core src/cyberm4fia_wifi/utils src/cyberm4fia_wifi/plugins
+mypy src/wlan_dumper/core src/wlan_dumper/utils src/wlan_dumper/plugins
 ```
 
 Expected: all green; coverage on `core/` and `utils/` remains ≥ 80 %, on `plugins/` ≥ 50 %.
@@ -2172,7 +2172,7 @@ git tag -a phase-2a -m "Phase 2a — deauth + handshake"
 ## Files Created / Modified (Summary)
 
 ```
-src/cyberm4fia_wifi/
+src/wlan_dumper/
   core/events.py            modified  (+DeauthSent, +HandshakeComplete, +mfp on BeaconSeen, EAPOLCapture refined)
   core/sniffer.py           modified  (+EAPOL branch, +MFP parse)
   core/session.py           modified  (+handshake_count, +mfp_status, +HandshakeComplete handler)
@@ -2198,6 +2198,6 @@ tests/unit/core/
   test_hcxtools.py          new
 
 README.md                   modified  (+Phase 2a quickstart + acceptance checklist)
-docs/superpowers/specs/2026-05-27-cyberm4fia-wifi-phase2a-design.md  (already committed)
-docs/superpowers/plans/2026-05-27-cyberm4fia-wifi-phase2a.md  (this file)
+docs/superpowers/specs/2026-05-27-wlan-dumper-phase2a-design.md  (already committed)
+docs/superpowers/plans/2026-05-27-wlan-dumper-phase2a.md  (this file)
 ```

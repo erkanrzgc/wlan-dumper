@@ -6,7 +6,7 @@ import threading
 
 import pytest
 
-from cyberm4fia_wifi.core.events import (
+from wlan_dumper.core.events import (
     BeaconSeen,
     ChannelChanged,
     ClientSeen,
@@ -148,7 +148,7 @@ class TestEventDataclasses:
 
 class TestPhase2EventDataclasses:
     def test_deauth_sent_carries_burst_position(self) -> None:
-        from cyberm4fia_wifi.core.events import DeauthSent
+        from wlan_dumper.core.events import DeauthSent
 
         evt = DeauthSent(
             timestamp=1.0,
@@ -161,7 +161,7 @@ class TestPhase2EventDataclasses:
         assert evt.total == 8
 
     def test_deauth_sent_allows_broadcast(self) -> None:
-        from cyberm4fia_wifi.core.events import DeauthSent
+        from wlan_dumper.core.events import DeauthSent
 
         evt = DeauthSent(
             timestamp=1.0,
@@ -173,7 +173,7 @@ class TestPhase2EventDataclasses:
         assert evt.target_station is None
 
     def test_eapol_capture_carries_raw_bytes_and_optional_index(self) -> None:
-        from cyberm4fia_wifi.core.events import EAPOLCapture
+        from wlan_dumper.core.events import EAPOLCapture
 
         evt = EAPOLCapture(
             timestamp=1.0,
@@ -186,7 +186,7 @@ class TestPhase2EventDataclasses:
         assert evt.raw == b"\x00\x01\x02"
 
     def test_eapol_capture_message_index_may_be_none(self) -> None:
-        from cyberm4fia_wifi.core.events import EAPOLCapture
+        from wlan_dumper.core.events import EAPOLCapture
 
         evt = EAPOLCapture(
             timestamp=1.0,
@@ -198,7 +198,7 @@ class TestPhase2EventDataclasses:
         assert evt.message_index is None
 
     def test_handshake_complete_carries_artifact_paths(self) -> None:
-        from cyberm4fia_wifi.core.events import HandshakeComplete
+        from wlan_dumper.core.events import HandshakeComplete
 
         evt = HandshakeComplete(
             timestamp=1.0,

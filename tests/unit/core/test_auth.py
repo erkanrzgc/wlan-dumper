@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from cyberm4fia_wifi.core.auth import (
+from wlan_dumper.core.auth import (
     AuthorizationGate,
     AuthzConfig,
     AuthzError,

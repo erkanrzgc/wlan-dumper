@@ -23,8 +23,8 @@ from scapy.all import (  # noqa: E402
     RSNCipherSuite,
 )
 
-from cyberm4fia_wifi.core.events import BeaconSeen, ClientSeen, ProbeSeen  # noqa: E402
-from cyberm4fia_wifi.core.sniffer import dissect_packet  # noqa: E402
+from wlan_dumper.core.events import BeaconSeen, ClientSeen, ProbeSeen  # noqa: E402
+from wlan_dumper.core.sniffer import dissect_packet  # noqa: E402
 
 
 def _radiotap(signal_dbm: int) -> RadioTap:
@@ -210,7 +210,7 @@ class TestEapolDissection:
             / eapol
         )
 
-        from cyberm4fia_wifi.core.events import EAPOLCapture
+        from wlan_dumper.core.events import EAPOLCapture
 
         evts = dissect_packet(pkt, now=100.0)
         eapol_evts = [e for e in evts if isinstance(e, EAPOLCapture)]

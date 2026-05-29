@@ -13,7 +13,7 @@ from typing import Any
 
 
 def _scapy() -> Any:
-    import scapy.all  # noqa: PLC0415
+    import scapy.all
 
     return scapy.all
 

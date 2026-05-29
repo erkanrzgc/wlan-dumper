@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from cyberm4fia_wifi.core.adapter import ADAPTERS, AdapterProfile, DetectedAdapter
-from cyberm4fia_wifi.plugins.scan import REGISTRY, ScanPlugin, pick_adapter
+from wlan_dumper.core.adapter import ADAPTERS, AdapterProfile, DetectedAdapter
+from wlan_dumper.plugins.scan import REGISTRY, ScanPlugin, pick_adapter
 
 
 def _adapter(iface: str, profile: AdapterProfile) -> DetectedAdapter:

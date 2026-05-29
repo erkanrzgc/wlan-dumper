@@ -18,12 +18,12 @@ from typing import Any, ClassVar
 import click
 from rich.text import Text
 
-from cyberm4fia_wifi.core.adapter import AdapterManager, DetectedAdapter
-from cyberm4fia_wifi.core.auth import PluginRisk
-from cyberm4fia_wifi.core.hopper import ChannelHopper
-from cyberm4fia_wifi.core.sniffer import Sniffer
-from cyberm4fia_wifi.plugins.base import Plugin, PluginContext
-from cyberm4fia_wifi.tui.app import ScanApp
+from wlan_dumper.core.adapter import AdapterManager, DetectedAdapter
+from wlan_dumper.core.auth import PluginRisk
+from wlan_dumper.core.hopper import ChannelHopper
+from wlan_dumper.core.sniffer import Sniffer
+from wlan_dumper.plugins.base import Plugin, PluginContext
+from wlan_dumper.tui.app import ScanApp
 
 
 def pick_adapter(adapters: list[DetectedAdapter], preferred_iface: str | None) -> DetectedAdapter:
@@ -143,12 +143,12 @@ def _pick_adapter_tui(
     from textual.containers import Container
     from textual.widgets import DataTable, Static
 
-    from cyberm4fia_wifi.core.adapter import detect_adapters, iface_link_info
+    from wlan_dumper.core.adapter import detect_adapters, iface_link_info
 
     redetect_fn = redetect or detect_adapters
 
     class AdapterPickerApp(App["DetectedAdapter | None"]):
-        TITLE = "cyberm4fia-dumper"
+        TITLE = "wlan-dumper"
         BINDINGS: ClassVar[list[Binding]] = [
             Binding("enter", "select", "Select"),
             Binding("q,escape", "cancel", "Cancel"),
@@ -308,7 +308,7 @@ class ScanPlugin(Plugin):
         @group.command(name=self.name, help="Live 802.11 scan + TUI (passive)")
         @click.pass_context
         def scan_cmd(ctx: click.Context) -> None:
-            from cyberm4fia_wifi.cli import build_runtime_for
+            from wlan_dumper.cli import build_runtime_for
 
             runtime = build_runtime_for(ctx)
             plugin_ctx = PluginContext(

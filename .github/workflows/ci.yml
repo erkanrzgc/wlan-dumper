@@ -47,7 +47,7 @@ jobs:
         run: pip install -e '.[dev]'
 
       - name: mypy on core
-        run: mypy src/cyberm4fia_wifi/core
+        run: mypy src/wlan_dumper/core
 
   tests:
     name: pytest (py${{ matrix.python }})
@@ -76,7 +76,7 @@ jobs:
         run: pip install -e '.[dev]'
 
       - name: pytest with coverage
-        run: pytest --cov=src/cyberm4fia_wifi --cov-report=xml --cov-report=term -q
+        run: pytest --cov=src/wlan_dumper --cov-report=xml --cov-report=term -q
 
       - name: Upload coverage XML
         if: always() && matrix.python == '3.11'

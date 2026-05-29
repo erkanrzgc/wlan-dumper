@@ -19,9 +19,9 @@ from datetime import datetime
 from pathlib import Path
 
 # ``Path(__file__).resolve()`` walks up:
-#   src/cyberm4fia_wifi/utils/paths.py  →
-#   src/cyberm4fia_wifi/utils           →  parents[0]
-#   src/cyberm4fia_wifi                 →  parents[1]
+#   src/wlan_dumper/utils/paths.py  →
+#   src/wlan_dumper/utils           →  parents[0]
+#   src/wlan_dumper                 →  parents[1]
 #   src                                 →  parents[2]
 #   <repo>                              →  parents[3]
 _REPO_ROOT = Path(__file__).resolve().parents[3]

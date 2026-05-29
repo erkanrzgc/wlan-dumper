@@ -9,8 +9,8 @@ operator's own benefit (after-the-fact accountability), not a runtime gate.
 Public surface:
 
 - ``AuthorizationGate.from_xdg()`` — construct from ``$XDG_CONFIG_HOME`` and
-  ``$XDG_DATA_HOME`` (defaults: ``~/.config/cyberm4fia/authz.yaml`` and
-  ``~/.local/share/cyberm4fia/audit.log``).
+  ``$XDG_DATA_HOME`` (defaults: ``~/.config/wlan-dumper/authz.yaml`` and
+  ``~/.local/share/wlan-dumper/audit.log``).
 - ``gate.ensure_acknowledged(stdin, stdout)`` — first-launch only. Shows the
   legal notice and persists a timestamp. Subsequent launches are silent.
 - ``gate.check(plugin, target=None, risk=None, reason=None)`` — no-op except
@@ -41,7 +41,7 @@ class AuthzError(Exception):
 
 
 _LEGAL_NOTICE = """\
-cyberm4fia-dumper transmits 802.11 frames (deauth) and captures traffic
+wlan-dumper transmits 802.11 frames (deauth) and captures traffic
 that affects real networks and real users. You are responsible for legal
 compliance in your jurisdiction. By proceeding you confirm you are
 authorized to operate against the networks you will target.
@@ -82,8 +82,8 @@ class AuthorizationGate:
         config_home = Path(os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config"))
         data_home = Path(os.environ.get("XDG_DATA_HOME") or (Path.home() / ".local" / "share"))
         return cls(
-            config_path=config_home / "cyberm4fia" / "authz.yaml",
-            audit_path=data_home / "cyberm4fia" / "audit.log",
+            config_path=config_home / "wlan-dumper" / "authz.yaml",
+            audit_path=data_home / "wlan-dumper" / "audit.log",
         )
 
     # ---- config ------------------------------------------------------------

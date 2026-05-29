@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cyberm4fia_wifi.core.events import BeaconSeen, ChannelChanged, ClientSeen, EventBus
-from cyberm4fia_wifi.core.session import Session
+from wlan_dumper.core.events import BeaconSeen, ChannelChanged, ClientSeen, EventBus
+from wlan_dumper.core.session import Session
 
 
 def _beacon(
@@ -144,7 +144,7 @@ class TestPersistence:
 
 class TestHandshakeAndMfpFields:
     def test_handshake_complete_event_bumps_counter(self) -> None:
-        from cyberm4fia_wifi.core.events import HandshakeComplete
+        from wlan_dumper.core.events import HandshakeComplete
 
         sess = Session()
         sess.handle_event(_beacon())
@@ -163,7 +163,7 @@ class TestHandshakeAndMfpFields:
         assert ap.handshake_count == 1
 
     def test_mfp_status_promoted_from_beacon(self) -> None:
-        from cyberm4fia_wifi.core.events import BeaconSeen
+        from wlan_dumper.core.events import BeaconSeen
 
         sess = Session()
         sess.handle_event(
@@ -180,7 +180,7 @@ class TestHandshakeAndMfpFields:
         assert sess.aps_snapshot()[0].mfp_status == "required"
 
     def test_mfp_status_unknown_does_not_overwrite_known(self) -> None:
-        from cyberm4fia_wifi.core.events import BeaconSeen
+        from wlan_dumper.core.events import BeaconSeen
 
         sess = Session()
         sess.handle_event(

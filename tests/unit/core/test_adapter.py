@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from cyberm4fia_wifi.core.adapter import (
+from wlan_dumper.core.adapter import (
     ADAPTERS,
     AdapterError,
     AdapterManager,
@@ -102,7 +102,7 @@ def fake_subprocess(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeSubprocess]
         fixture.calls.append(argv)
         return match
 
-    from cyberm4fia_wifi.core import adapter
+    from wlan_dumper.core import adapter
 
     monkeypatch.setattr(adapter, "_run", run)
     # Stub sysfs lookup so tests exercise the udevadm fallback deterministically;

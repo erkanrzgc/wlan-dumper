@@ -9,9 +9,9 @@ import pytest
 scapy = pytest.importorskip("scapy.all")
 from scapy.all import Ether  # noqa: E402
 
-from cyberm4fia_wifi.core.auth import AuthorizationGate, AuthzConfig
-from cyberm4fia_wifi.core.events import EAPOLCapture, EventBus, HandshakeComplete
-from cyberm4fia_wifi.plugins.handshake import HandshakePlugin
+from wlan_dumper.core.auth import AuthorizationGate, AuthzConfig
+from wlan_dumper.core.events import EAPOLCapture, EventBus, HandshakeComplete
+from wlan_dumper.plugins.handshake import HandshakePlugin
 
 
 @pytest.fixture
@@ -38,7 +38,7 @@ class TestHandshakeStateMachine:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from cyberm4fia_wifi.utils import paths
+        from wlan_dumper.utils import paths
         monkeypatch.setattr(paths, "_CAPTURES", tmp_path / "captures")
 
         def fake_convert(p):
@@ -47,7 +47,7 @@ class TestHandshakeStateMachine:
             return out
 
         monkeypatch.setattr(
-            "cyberm4fia_wifi.plugins.handshake.convert_to_22000", fake_convert
+            "wlan_dumper.plugins.handshake.convert_to_22000", fake_convert
         )
 
         bus = EventBus()
@@ -79,10 +79,10 @@ class TestHandshakeStateMachine:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from cyberm4fia_wifi.utils import paths
+        from wlan_dumper.utils import paths
         monkeypatch.setattr(paths, "_CAPTURES", tmp_path / "captures")
         monkeypatch.setattr(
-            "cyberm4fia_wifi.plugins.handshake.convert_to_22000", lambda p: None
+            "wlan_dumper.plugins.handshake.convert_to_22000", lambda p: None
         )
 
         bus = EventBus()
@@ -108,7 +108,7 @@ class TestHandshakeStateMachine:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from cyberm4fia_wifi.utils import paths
+        from wlan_dumper.utils import paths
         monkeypatch.setattr(paths, "_CAPTURES", tmp_path / "captures")
 
         def fake_convert(p):
@@ -117,7 +117,7 @@ class TestHandshakeStateMachine:
             return out
 
         monkeypatch.setattr(
-            "cyberm4fia_wifi.plugins.handshake.convert_to_22000", fake_convert
+            "wlan_dumper.plugins.handshake.convert_to_22000", fake_convert
         )
 
         bus = EventBus()

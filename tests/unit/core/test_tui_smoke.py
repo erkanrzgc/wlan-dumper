@@ -6,9 +6,9 @@ import pytest
 
 textual = pytest.importorskip("textual")
 
-from cyberm4fia_wifi.core.events import BeaconSeen, ClientSeen, EventBus  # noqa: E402
-from cyberm4fia_wifi.core.session import Session  # noqa: E402
-from cyberm4fia_wifi.tui.app import ScanApp  # noqa: E402
+from wlan_dumper.core.events import BeaconSeen, ClientSeen, EventBus  # noqa: E402
+from wlan_dumper.core.session import Session  # noqa: E402
+from wlan_dumper.tui.app import ScanApp  # noqa: E402
 
 
 def _populate(session: Session) -> None:
@@ -168,7 +168,7 @@ async def test_d_and_h_bindings_present() -> None:
 @pytest.mark.asyncio
 async def test_ap_details_shows_mfp_and_handshake_count() -> None:
     sess = Session()
-    from cyberm4fia_wifi.core.events import BeaconSeen, HandshakeComplete
+    from wlan_dumper.core.events import BeaconSeen, HandshakeComplete
 
     sess.handle_event(
         BeaconSeen(

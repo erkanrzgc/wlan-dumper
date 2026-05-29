@@ -105,7 +105,7 @@ def is_locally_administered(bssid: str) -> bool:
     randomization, etc.); a true here is a strong hint the OUI lookup is
     meaningless because the address was generated locally.
     """
-    if not bssid or ":" not in bssid and len(bssid) < 2:
+    if not bssid or (":" not in bssid and len(bssid) < 2):
         return False
     first = bssid.replace(":", "")[:2]
     try:

@@ -7,9 +7,9 @@ import io
 import click
 import pytest
 
-from cyberm4fia_wifi.core.adapter import ADAPTERS, AdapterProfile, DetectedAdapter
-from cyberm4fia_wifi.plugins.scan import interactive_pick_adapter
-from cyberm4fia_wifi.utils import paths
+from wlan_dumper.core.adapter import ADAPTERS, AdapterProfile, DetectedAdapter
+from wlan_dumper.plugins.scan import interactive_pick_adapter
+from wlan_dumper.utils import paths
 
 
 class _TTY(io.StringIO):
@@ -32,7 +32,7 @@ class TestInteractivePicker:
         assert out.getvalue() == ""  # no prompt shown
 
     def test_single_adapter_uses_tui_picker_when_tty(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from cyberm4fia_wifi.plugins import scan
+        from wlan_dumper.plugins import scan
 
         a = _ad("wlan0", ADAPTERS[(0x0CF3, 0x9271)])
         called = False
@@ -112,7 +112,7 @@ class TestInteractivePicker:
     ) -> None:
         # With a TTY, zero adapters must NOT raise — the picker opens and waits
         # for one to be plugged in.
-        from cyberm4fia_wifi.plugins import scan
+        from wlan_dumper.plugins import scan
 
         a = _ad("wlan0", ADAPTERS[(0x0CF3, 0x9271)])
         seen_args: dict[str, object] = {}
@@ -135,7 +135,7 @@ class TestInteractivePicker:
     ) -> None:
         # --iface points at an adapter that isn't present yet; in a TTY this
         # should open the picker (which keeps watching) rather than error.
-        from cyberm4fia_wifi.plugins import scan
+        from wlan_dumper.plugins import scan
 
         b = _ad("wlan1", ADAPTERS[(0x0BDA, 0x8812)])
 

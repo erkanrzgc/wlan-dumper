@@ -30,7 +30,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from cyberm4fia_wifi.core.events import ChannelChanged, EventBus
+from wlan_dumper.core.events import ChannelChanged, EventBus
 
 
 class HopperError(Exception):
@@ -142,7 +142,7 @@ class ChannelHopper:
         if self._thread and self._thread.is_alive():
             return
         self._stop.clear()
-        self._thread = threading.Thread(target=self._run, name="cyberm4fia-hopper", daemon=True)
+        self._thread = threading.Thread(target=self._run, name="wlan-dumper-hopper", daemon=True)
         self._thread.start()
 
     def stop(self) -> None:

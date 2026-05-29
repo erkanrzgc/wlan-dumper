@@ -6,9 +6,9 @@ import pytest
 
 scapy = pytest.importorskip("scapy.all")
 
-from cyberm4fia_wifi.core.auth import AuthorizationGate, AuthzConfig
-from cyberm4fia_wifi.core.events import DeauthSent, EventBus
-from cyberm4fia_wifi.plugins.deauth import DeauthPlugin
+from wlan_dumper.core.auth import AuthorizationGate, AuthzConfig
+from wlan_dumper.core.events import DeauthSent, EventBus
+from wlan_dumper.plugins.deauth import DeauthPlugin
 
 
 @pytest.fixture
