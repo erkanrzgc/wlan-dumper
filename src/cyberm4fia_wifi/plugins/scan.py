@@ -269,13 +269,20 @@ def _pick_adapter_tui(
                 )
 
         def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
-            with contextlib.suppress(TypeError, ValueError):
-                self._chosen_idx = int(str(event.row_key.value))
+            self._remember_row(event.row_key)
 
         def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-            with contextlib.suppress(TypeError, ValueError):
-                self._chosen_idx = int(str(event.row_key.value))
+            self._remember_row(event.row_key)
             self.action_select()
+
+        def _remember_row(self, row_key: object) -> None:
+            # When the table goes from empty to populated (or clears), Textual
+            # fires highlight events with row_key=None — guard against it.
+            key_value = getattr(row_key, "value", None)
+            if key_value is None:
+                return
+            with contextlib.suppress(TypeError, ValueError):
+                self._chosen_idx = int(str(key_value))
 
         def action_select(self) -> None:
             if 0 <= self._chosen_idx < len(self._adapters):
