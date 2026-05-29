@@ -41,11 +41,10 @@ class AuthzError(Exception):
 
 
 _LEGAL_NOTICE = """\
-cyberm4fia-wifi performs 802.11 audit actions that affect real networks
-and real users. You are responsible for legal compliance in your
-jurisdiction. By proceeding you confirm you are authorized to audit the
-networks you will target. The tool keeps a local audit log of every
-active action — it's for your own records.
+cyberm4fia-dumper transmits 802.11 frames (deauth) and captures traffic
+that affects real networks and real users. You are responsible for legal
+compliance in your jurisdiction. By proceeding you confirm you are
+authorized to operate against the networks you will target.
 """
 
 

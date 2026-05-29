@@ -148,7 +148,7 @@ def _pick_adapter_tui(
     redetect_fn = redetect or detect_adapters
 
     class AdapterPickerApp(App["DetectedAdapter | None"]):
-        TITLE = "cyberm4fia-wifi"
+        TITLE = "cyberm4fia-dumper"
         BINDINGS: ClassVar[list[Binding]] = [
             Binding("enter", "select", "Select"),
             Binding("q,escape", "cancel", "Cancel"),

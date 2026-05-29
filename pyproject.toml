@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cyberm4fia-wifi"
+name = "cyberm4fia-dumper"
 version = "0.1.0"
-description = "802.11 audit suite: scan + display (Phase 1), handshake/deauth/PMKID/WPS (Phase 2), crack + Evil Twin (Phase 3), wordlist generator (Phase 4)."
+description = "WiFi cracking toolkit: scan 802.11 networks, deauth clients, capture WPA handshakes, and crack them. Terminal TUI."
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "erkanrzgc" }]
@@ -44,7 +44,7 @@ dev = [
 cyberm4fia = "cyberm4fia_wifi.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/erkanrzgc/cyberm4fia-wiFi-cracker"
+Homepage = "https://github.com/erkanrzgc/cyberm4fia-dumper"
 
 [tool.setuptools.packages.find]
 where = ["src"]

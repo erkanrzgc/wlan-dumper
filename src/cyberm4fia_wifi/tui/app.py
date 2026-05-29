@@ -2,7 +2,7 @@
 
 Layout (top to bottom):
 
-    Header (cyberm4fia-wifi)
+    Header (cyberm4fia-dumper)
     Status bar (slim, two lines)
     +------------------------------------------------------------------+
     |  Access Points (full width)                                      |
@@ -112,7 +112,7 @@ def _band_for(channel: int) -> str:
 
 
 class ScanApp(App[None]):
-    TITLE = "cyberm4fia-wifi"
+    TITLE = "cyberm4fia-dumper"
     SUB_TITLE = "live 802.11 scan"
 
     # No background/color overrides — let the terminal palette win.

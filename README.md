@@ -1,12 +1,12 @@
-# cyberm4fia-wifi
+# cyberm4fia-dumper
 
-> ⚠️ **Authorization warning.** This tool can perform actions that affect real wireless networks
-> and real users. Using it against networks you do not own or do not have explicit, written
-> permission to audit is illegal in most jurisdictions. The built-in authorization gate is a
-> guard, not a license — the operator is responsible for compliance.
+> ⚠️ **Legal notice.** This tool transmits 802.11 frames (deauthentication) and captures
+> wireless traffic. Using it against networks you do not own or do not have explicit, written
+> permission to test is illegal in most jurisdictions. You are responsible for compliance.
 
-A Python-based 802.11 audit suite that fuses the airodump-ng (live scan / display) and
-aircrack-ng (offline crack) workflows into a single plugin-extensible CLI with a Textual TUI.
+A Python WiFi cracking toolkit that fuses the airodump-ng (live scan) and aircrack-ng
+(offline crack) workflows into a single plugin-extensible CLI with a Textual TUI:
+**scan → deauth → capture WPA handshakes → crack.**
 
 | Phase | Status | Scope |
 |-------|--------|-------|
@@ -87,11 +87,11 @@ Reboot or `sudo modprobe 88XXau` afterwards. Verify with:
 lsmod | grep -E '88XXau|ath9k_htc'
 ```
 
-### 3. Install cyberm4fia-wifi
+### 3. Install cyberm4fia-dumper
 
 ```bash
-git clone https://github.com/erkanrzgc/cyberm4fia-wiFi-cracker.git
-cd cyberm4fia-wiFi-cracker
+git clone https://github.com/erkanrzgc/cyberm4fia-dumper.git
+cd cyberm4fia-dumper
 pipx install --editable .[dev]
 ```
 

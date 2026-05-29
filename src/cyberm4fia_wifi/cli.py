@@ -40,8 +40,8 @@ def _ctx_obj(ctx: click.Context) -> dict[str, object]:
 @click.group(
     name="cyberm4fia",
     help=(
-        "cyberm4fia-wifi: 802.11 audit suite. Use only against networks you "
-        "own or have explicit, written permission to audit."
+        "cyberm4fia-dumper: WiFi cracking toolkit — scan, deauth, capture "
+        "WPA handshakes, and crack them."
     ),
 )
 @click.option(

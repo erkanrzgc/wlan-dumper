@@ -1,3 +1,3 @@
-"""cyberm4fia-wifi: 802.11 audit suite."""
+"""cyberm4fia-dumper: WiFi cracking toolkit (scan, deauth, handshake capture, crack)."""
 
 __version__ = "0.1.0"
