@@ -32,9 +32,7 @@ def _capture_sent(monkeypatch: pytest.MonkeyPatch) -> list:
 
 
 class TestDeauthExecute:
-    def test_sends_configured_count(
-        self, gate, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_sends_configured_count(self, gate, monkeypatch: pytest.MonkeyPatch) -> None:
         sent = _capture_sent(monkeypatch)
         bus = EventBus()
         events: list = []
@@ -42,10 +40,13 @@ class TestDeauthExecute:
 
         plugin = DeauthPlugin()
         rc = plugin.execute(
-            bus=bus, gate=gate, iface="wlan0mon",
+            bus=bus,
+            gate=gate,
+            iface="wlan0mon",
             target_bssid="AA:BB:CC:DD:EE:01",
             target_station="11:22:33:44:55:66",
-            count=5, reason="test",
+            count=5,
+            reason="test",
         )
 
         assert rc == 0
@@ -63,25 +64,29 @@ class TestDeauthExecute:
 
         plugin = DeauthPlugin()
         plugin.execute(
-            bus=bus, gate=gate, iface="wlan0mon",
+            bus=bus,
+            gate=gate,
+            iface="wlan0mon",
             target_bssid="AA:BB:CC:DD:EE:01",
             target_station=None,
-            count=2, reason="test",
+            count=2,
+            reason="test",
         )
 
         assert events[0].target_station is None
         from scapy.all import Dot11
+
         for frame in sent:
             assert frame[Dot11].addr1.lower() == "ff:ff:ff:ff:ff:ff"
 
-    def test_reason_is_optional(
-        self, gate, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_reason_is_optional(self, gate, monkeypatch: pytest.MonkeyPatch) -> None:
         """Gate no longer enforces a reason — execute must run without one."""
         _capture_sent(monkeypatch)
         plugin = DeauthPlugin()
         rc = plugin.execute(
-            bus=EventBus(), gate=gate, iface="wlan0mon",
+            bus=EventBus(),
+            gate=gate,
+            iface="wlan0mon",
             target_bssid="AA:BB:CC:DD:EE:01",
             target_station="11:22:33:44:55:66",
             count=1,

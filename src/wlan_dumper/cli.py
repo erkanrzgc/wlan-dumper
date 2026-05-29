@@ -40,8 +40,7 @@ def _ctx_obj(ctx: click.Context) -> dict[str, object]:
 @click.group(
     name="wlan-dumper",
     help=(
-        "wlan-dumper: WiFi cracking toolkit — scan, deauth, capture "
-        "WPA handshakes, and crack them."
+        "wlan-dumper: WiFi cracking toolkit — scan, deauth, capture WPA handshakes, and crack them."
     ),
 )
 @click.option(

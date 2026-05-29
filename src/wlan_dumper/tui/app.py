@@ -384,9 +384,7 @@ class ScanApp(App[None]):
         vendor = oui_for(ap.bssid) or "(unknown OUI)"
         wps = Text("yes", style="yellow") if ap.wps else Text("no", style="dim")
         interval = (
-            Text(f"{ap.beacon_interval_ms} ms")
-            if ap.beacon_interval_ms
-            else Text("—", style="dim")
+            Text(f"{ap.beacon_interval_ms} ms") if ap.beacon_interval_ms else Text("—", style="dim")
         )
         return Text.assemble(
             ("ESSID    ", "dim"),
@@ -459,21 +457,29 @@ class ScanApp(App[None]):
         uptime = int(time.time() - self._started_at)
 
         line1 = Text.assemble(
-            ("iface: ", "dim"), (self._iface, "cyan"),
-            ("   driver: ", "dim"), (self._driver_name, ""),
-            ("   channel: ", "dim"), (ch_label, "yellow"),
-            ("   uptime: ", "dim"), (f"{uptime}s", ""),
+            ("iface: ", "dim"),
+            (self._iface, "cyan"),
+            ("   driver: ", "dim"),
+            (self._driver_name, ""),
+            ("   channel: ", "dim"),
+            (ch_label, "yellow"),
+            ("   uptime: ", "dim"),
+            (f"{uptime}s", ""),
             ("    PAUSED", "red") if self._paused else ("", ""),
         )
         line2 = Text.assemble(
-            ("APs: ", "dim"), (f"{ap_count}", "green"),
-            ("   2.4GHz: ", "dim"), (str(c24), "green"),
-            ("   5GHz: ", "dim"), (str(c5), "green"),
-            ("   WPS-APs: ", "dim"), (str(wps_count), "yellow" if wps_count else "dim"),
-            ("   clients: ", "dim"), (str(clients_total), "cyan"),
+            ("APs: ", "dim"),
+            (f"{ap_count}", "green"),
+            ("   2.4GHz: ", "dim"),
+            (str(c24), "green"),
+            ("   5GHz: ", "dim"),
+            (str(c5), "green"),
+            ("   WPS-APs: ", "dim"),
+            (str(wps_count), "yellow" if wps_count else "dim"),
+            ("   clients: ", "dim"),
+            (str(clients_total), "cyan"),
             ("   filter: ", "dim"),
-            (f'"{self._filter}"' if self._filter else "—",
-             "yellow" if self._filter else "dim"),
+            (f'"{self._filter}"' if self._filter else "—", "yellow" if self._filter else "dim"),
         )
         return Text.assemble(line1, "\n", line2)
 
@@ -496,8 +502,11 @@ class ScanApp(App[None]):
             first_seen = evt.bssid not in self._known_bssids
             if not first_seen:
                 ap = next(
-                    (a for a in self._session.aps_snapshot()
-                     if a.bssid.lower() == evt.bssid.lower()),
+                    (
+                        a
+                        for a in self._session.aps_snapshot()
+                        if a.bssid.lower() == evt.bssid.lower()
+                    ),
                     None,
                 )
                 if ap is None or ap.beacon_count % _BEACON_LOG_EVERY != 0:
@@ -513,14 +522,21 @@ class ScanApp(App[None]):
             return None  # too noisy by default
         if isinstance(evt, ClientSeen):
             return _log_row(
-                stamp, "STA", evt.station, evt.bssid, f"{evt.signal_dbm:>4}dBm",
+                stamp,
+                "STA",
+                evt.station,
+                evt.bssid,
+                f"{evt.signal_dbm:>4}dBm",
             )
         if isinstance(evt, ChannelChanged):
             return None  # silent hop — channel shown in status bar
         if isinstance(evt, DeauthSent):
             who = evt.target_station or "broadcast"
             return _log_row(
-                stamp, "DEAUTH", who, evt.target_bssid,
+                stamp,
+                "DEAUTH",
+                who,
+                evt.target_bssid,
                 f"frame {evt.sequence:>3}/{evt.total}",
             )
         if isinstance(evt, EAPOLCapture):
@@ -530,7 +546,10 @@ class ScanApp(App[None]):
             verdict = "VALID" if evt.valid_by_hcxtool else "PARTIAL"
             artifact = evt.hashcat_path or evt.pcap_path
             return _log_row(
-                stamp, "HS", evt.station, evt.bssid,
+                stamp,
+                "HS",
+                evt.station,
+                evt.bssid,
                 f"{verdict}  saved {artifact}",
             )
         return _log_row(stamp, "EVENT", "-", "-", type(evt).__name__)

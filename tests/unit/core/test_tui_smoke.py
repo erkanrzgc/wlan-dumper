@@ -6,9 +6,9 @@ import pytest
 
 textual = pytest.importorskip("textual")
 
-from wlan_dumper.core.events import BeaconSeen, ClientSeen, EventBus  # noqa: E402
-from wlan_dumper.core.session import Session  # noqa: E402
-from wlan_dumper.tui.app import ScanApp  # noqa: E402
+from wlan_dumper.core.events import BeaconSeen, ClientSeen, EventBus
+from wlan_dumper.core.session import Session
+from wlan_dumper.tui.app import ScanApp
 
 
 def _populate(session: Session) -> None:
@@ -92,9 +92,9 @@ def test_log_line_for_client() -> None:
     line = app._log_queue.get_nowait()
     # Fixed-column format: Time | Event | Station | BSSID | Detail
     assert "STA" in line
-    assert "11:22:33:44:55:66" in line          # station column
-    assert "aa:bb:cc:dd:ee:01" in line          # bssid column
-    assert "-55dBm" in line                      # detail column
+    assert "11:22:33:44:55:66" in line  # station column
+    assert "aa:bb:cc:dd:ee:01" in line  # bssid column
+    assert "-55dBm" in line  # detail column
 
 
 def test_beacon_logged_once_per_new_ap() -> None:

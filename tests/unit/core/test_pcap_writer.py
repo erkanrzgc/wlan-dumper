@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 
 scapy = pytest.importorskip("scapy.all")
-from scapy.all import IP, Ether, rdpcap  # noqa: E402
+from scapy.all import IP, Ether, rdpcap
 
-from wlan_dumper.utils.pcap_writer import append_packets  # noqa: E402
+from wlan_dumper.utils.pcap_writer import append_packets
 
 
 def _pkt(payload: str) -> Ether:

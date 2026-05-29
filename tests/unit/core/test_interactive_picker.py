@@ -107,9 +107,7 @@ class TestInteractivePicker:
                 [], preferred_iface=None, stdin=io.StringIO(""), stdout=io.StringIO()
             )
 
-    def test_empty_adapters_opens_picker_when_tty(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_empty_adapters_opens_picker_when_tty(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # With a TTY, zero adapters must NOT raise — the picker opens and waits
         # for one to be plugged in.
         from wlan_dumper.plugins import scan
@@ -124,9 +122,7 @@ class TestInteractivePicker:
 
         monkeypatch.setattr(scan, "_pick_adapter_tui", fake_picker)
 
-        chosen = interactive_pick_adapter(
-            [], preferred_iface=None, stdin=_TTY(), stdout=_TTY()
-        )
+        chosen = interactive_pick_adapter([], preferred_iface=None, stdin=_TTY(), stdout=_TTY())
         assert chosen is a
         assert seen_args["adapters"] == []  # picker started empty
 
@@ -145,9 +141,7 @@ class TestInteractivePicker:
 
         monkeypatch.setattr(scan, "_pick_adapter_tui", fake_picker)
 
-        chosen = interactive_pick_adapter(
-            [], preferred_iface="wlan1", stdin=_TTY(), stdout=_TTY()
-        )
+        chosen = interactive_pick_adapter([], preferred_iface="wlan1", stdin=_TTY(), stdout=_TTY())
         assert chosen is b
 
 

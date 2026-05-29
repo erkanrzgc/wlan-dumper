@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 scapy = pytest.importorskip("scapy.all")
-from scapy.all import Ether  # noqa: E402
+from scapy.all import Ether
 
 from wlan_dumper.core.auth import AuthorizationGate, AuthzConfig
 from wlan_dumper.core.events import EAPOLCapture, EventBus, HandshakeComplete
@@ -39,6 +39,7 @@ class TestHandshakeStateMachine:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from wlan_dumper.utils import paths
+
         monkeypatch.setattr(paths, "_CAPTURES", tmp_path / "captures")
 
         def fake_convert(p):
@@ -46,9 +47,7 @@ class TestHandshakeStateMachine:
             out.write_text("WPA*02*...")
             return out
 
-        monkeypatch.setattr(
-            "wlan_dumper.plugins.handshake.convert_to_22000", fake_convert
-        )
+        monkeypatch.setattr("wlan_dumper.plugins.handshake.convert_to_22000", fake_convert)
 
         bus = EventBus()
         completes: list[HandshakeComplete] = []
@@ -56,11 +55,10 @@ class TestHandshakeStateMachine:
 
         plugin = HandshakePlugin()
         plugin._arm(
-            bus=bus, gate=gate, iface="wlan0mon",
+            bus=bus,
             target_bssid="aa:bb:cc:dd:ee:01",
             target_station="11:22:33:44:55:66",
             essid="MyHome",
-            reason="lab",
         )
 
         for mi in (1, 2, 3, 4):
@@ -80,10 +78,9 @@ class TestHandshakeStateMachine:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from wlan_dumper.utils import paths
+
         monkeypatch.setattr(paths, "_CAPTURES", tmp_path / "captures")
-        monkeypatch.setattr(
-            "wlan_dumper.plugins.handshake.convert_to_22000", lambda p: None
-        )
+        monkeypatch.setattr("wlan_dumper.plugins.handshake.convert_to_22000", lambda p: None)
 
         bus = EventBus()
         completes: list[HandshakeComplete] = []
@@ -91,11 +88,10 @@ class TestHandshakeStateMachine:
 
         plugin = HandshakePlugin()
         plugin._arm(
-            bus=bus, gate=gate, iface="wlan0mon",
+            bus=bus,
             target_bssid="aa:bb:cc:dd:ee:01",
             target_station="11:22:33:44:55:66",
             essid="MyHome",
-            reason="lab",
         )
         # Only M1 — handshake not complete (need {1,2} minimum).
         bus.publish(_eapol("aa:bb:cc:dd:ee:01", "11:22:33:44:55:66", 1))
@@ -109,6 +105,7 @@ class TestHandshakeStateMachine:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from wlan_dumper.utils import paths
+
         monkeypatch.setattr(paths, "_CAPTURES", tmp_path / "captures")
 
         def fake_convert(p):
@@ -116,9 +113,7 @@ class TestHandshakeStateMachine:
             out.write_text("WPA*02*...")
             return out
 
-        monkeypatch.setattr(
-            "wlan_dumper.plugins.handshake.convert_to_22000", fake_convert
-        )
+        monkeypatch.setattr("wlan_dumper.plugins.handshake.convert_to_22000", fake_convert)
 
         bus = EventBus()
         completes: list[HandshakeComplete] = []
@@ -126,11 +121,10 @@ class TestHandshakeStateMachine:
 
         plugin = HandshakePlugin()
         plugin._arm(
-            bus=bus, gate=gate, iface="wlan0mon",
+            bus=bus,
             target_bssid="aa:bb:cc:dd:ee:01",
             target_station="11:22:33:44:55:66",
             essid="MyHome",
-            reason="lab",
         )
         for mi in (1, 2, 3, 4):
             bus.publish(_eapol("zz:zz:zz:zz:zz:zz", "11:22:33:44:55:66", mi))

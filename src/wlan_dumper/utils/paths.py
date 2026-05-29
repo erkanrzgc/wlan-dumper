@@ -66,9 +66,7 @@ def _safe_essid(essid: str | None) -> str:
     """
     if not essid:
         return "hidden"
-    cleaned = "".join(
-        c if (c.isalnum() or c in "-_.") else "_" for c in essid
-    )
+    cleaned = "".join(c if (c.isalnum() or c in "-_.") else "_" for c in essid)
     cleaned = cleaned.strip("_") or "hidden"
     return cleaned[:32]
 

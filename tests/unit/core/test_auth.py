@@ -52,9 +52,7 @@ class TestFirstLaunchAcknowledgment:
             )
         assert AuthzConfig.load(gate.config_path) is None
 
-    def test_already_acknowledged_does_not_re_prompt(
-        self, gate: AuthorizationGate
-    ) -> None:
+    def test_already_acknowledged_does_not_re_prompt(self, gate: AuthorizationGate) -> None:
         AuthzConfig(acknowledged_at="2026-05-27T00:00:00Z").dump(gate.config_path)
 
         # Empty stdin: would block / EOF if a prompt were issued.
@@ -90,9 +88,7 @@ class TestAuditLog:
         assert 'reason="engagement 4711"' in line
         assert "risk=high" in line
 
-    def test_active_action_without_target_still_logs(
-        self, gate: AuthorizationGate
-    ) -> None:
+    def test_active_action_without_target_still_logs(self, gate: AuthorizationGate) -> None:
         gate.check(plugin="deauth", risk=PluginRisk.ACTIVE)
         line = gate.audit_path.read_text().strip().splitlines()[-1]
         assert "target=-" in line

@@ -49,7 +49,8 @@ class HandshakePlugin(Plugin):
         @click.option("--count", "-n", default=8, show_default=True, type=int)
         @click.option("--timeout", default=60, show_default=True, type=int)
         @click.option(
-            "--note", default=None,
+            "--note",
+            default=None,
             help="Free-text note appended to the audit-log line",
         )
         @click.pass_context
@@ -104,19 +105,22 @@ class HandshakePlugin(Plugin):
         )
 
         self._arm(
-            bus=bus, gate=gate, iface=iface,
+            bus=bus,
             target_bssid=target_bssid,
             target_station=target_station,
-            essid=essid, reason=reason,
+            essid=essid,
         )
 
         try:
             if auto_deauth:
                 DeauthPlugin().execute(
-                    bus=bus, gate=gate, iface=iface,
+                    bus=bus,
+                    gate=gate,
+                    iface=iface,
                     target_bssid=target_bssid,
                     target_station=target_station,
-                    count=deauth_count, reason=reason,
+                    count=deauth_count,
+                    reason=reason,
                 )
             self._completed.wait(timeout=timeout)
             return 0 if self._completed.is_set() else 1
@@ -128,12 +132,9 @@ class HandshakePlugin(Plugin):
         self,
         *,
         bus: EventBus,
-        gate: AuthorizationGate,
-        iface: str,
         target_bssid: str,
         target_station: str | None,
         essid: str | None,
-        reason: str | None = None,
     ) -> None:
         self._bus = bus
         self._target_bssid = target_bssid.lower()

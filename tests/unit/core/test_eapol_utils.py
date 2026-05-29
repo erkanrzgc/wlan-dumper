@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 
 scapy = pytest.importorskip("scapy.all")
-from scapy.all import EAPOL  # noqa: E402
+from scapy.all import EAPOL
 
-from wlan_dumper.utils.eapol import message_index  # noqa: E402
+from wlan_dumper.utils.eapol import message_index
 
 # Practical Key Information patterns per IEEE 802.11-2016 §12.7.6.
 M1_KEY_INFO = 0x008A  # version=2, type=pairwise, ack=1

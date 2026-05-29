@@ -185,14 +185,24 @@ class TestHandshakeAndMfpFields:
         sess = Session()
         sess.handle_event(
             BeaconSeen(
-                timestamp=1.0, bssid="x", essid="x", channel=1,
-                encryption="WPA2-PSK", signal_dbm=-50, mfp_status="required",
+                timestamp=1.0,
+                bssid="x",
+                essid="x",
+                channel=1,
+                encryption="WPA2-PSK",
+                signal_dbm=-50,
+                mfp_status="required",
             )
         )
         sess.handle_event(
             BeaconSeen(
-                timestamp=2.0, bssid="x", essid="x", channel=1,
-                encryption="WPA2-PSK", signal_dbm=-50, mfp_status="unknown",
+                timestamp=2.0,
+                bssid="x",
+                essid="x",
+                channel=1,
+                encryption="WPA2-PSK",
+                signal_dbm=-50,
+                mfp_status="unknown",
             )
         )
         assert sess.aps_snapshot()[0].mfp_status == "required"

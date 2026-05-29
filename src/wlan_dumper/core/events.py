@@ -35,7 +35,7 @@ class BeaconSeen(Event):
     signal_dbm: int
     wps: bool = False  # WPS IE present in the beacon — attack vector flag
     beacon_interval_ms: int = 0  # 0 = unknown / not parsed
-    mfp_status: str = "unknown"   # "none" | "capable" | "required" | "unknown"
+    mfp_status: str = "unknown"  # "none" | "capable" | "required" | "unknown"
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,8 +73,8 @@ class DeauthSent(Event):
 
     target_bssid: str
     target_station: str | None  # None == broadcast
-    sequence: int               # 1-based position inside the burst
-    total: int                  # configured burst size
+    sequence: int  # 1-based position inside the burst
+    total: int  # configured burst size
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,7 +84,7 @@ class HandshakeComplete(Event):
     bssid: str
     station: str
     pcap_path: str
-    hashcat_path: str | None    # None when hcxpcapngtool is missing/rejected
+    hashcat_path: str | None  # None when hcxpcapngtool is missing/rejected
     valid_by_hcxtool: bool
 
 

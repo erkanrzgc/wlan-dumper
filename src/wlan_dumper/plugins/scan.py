@@ -87,9 +87,7 @@ def interactive_pick_adapter(
         # TTY: fall through to the picker, which keeps watching for it.
 
     if tty:
-        return _pick_adapter_tui(
-            adapters, redetect=redetect, preferred_iface=preferred_iface
-        )
+        return _pick_adapter_tui(adapters, redetect=redetect, preferred_iface=preferred_iface)
 
     # ---- non-interactive fall-through (scripts / pipes) ----
     if not adapters:
@@ -185,8 +183,11 @@ def _pick_adapter_tui(
                 yield Static("", id="status")
                 yield Static(
                     Text.assemble(
-                        ("Only wireless interfaces shown — eth*, docker0, br-*, "
-                         "veth* etc. can't enter monitor mode.\n", "dim"),
+                        (
+                            "Only wireless interfaces shown — eth*, docker0, br-*, "
+                            "veth* etc. can't enter monitor mode.\n",
+                            "dim",
+                        ),
                         ("↑↓", ""),
                         (" move  ·  ", "dim"),
                         ("Enter", ""),

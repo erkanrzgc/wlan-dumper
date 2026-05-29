@@ -10,7 +10,7 @@ from wlan_dumper.plugins.handshake import HandshakePlugin
 from wlan_dumper.plugins.scan import REGISTRY as _SCAN_REGISTRY
 from wlan_dumper.plugins.scan import ScanPlugin
 
-REGISTRY: list[Plugin] = list(_SCAN_REGISTRY) + [DeauthPlugin(), HandshakePlugin()]
+REGISTRY: list[Plugin] = [*_SCAN_REGISTRY, DeauthPlugin(), HandshakePlugin()]
 
 __all__ = [
     "REGISTRY",

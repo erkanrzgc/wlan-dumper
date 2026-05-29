@@ -132,7 +132,8 @@ class HandshakeModal(ModalScreen[HandshakeRequest | None]):
                     yield Label("MFP override:", classes="field_label")
                     yield Checkbox(
                         "try anyway (usually ineffective)",
-                        value=False, id="mfp_override",
+                        value=False,
+                        id="mfp_override",
                     )
 
             with Horizontal(id="row_buttons"):

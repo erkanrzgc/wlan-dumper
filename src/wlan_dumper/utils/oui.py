@@ -48,7 +48,6 @@ _OUI: dict[str, str] = {
     "4c5e0c": "Mikrotik",
     "e48d8c": "Mikrotik",
     "dca632": "Ubiquiti",
-    "245a4c": "TP-Link",
     "98ded0": "TP-Link",
     "74832c": "RuckusWireless",
     # Client device vendors (phones / laptops — useful when STA shows up)
@@ -77,7 +76,6 @@ _OUI: dict[str, str] = {
     "8c705a": "Intel",
     "001b21": "Intel",
     "0050f2": "Microsoft",
-    "00037f": "Atheros",
     "00226b": "Cisco-Linksys",
     "001cdf": "Belkin",
     "0090a9": "Western-Digital",

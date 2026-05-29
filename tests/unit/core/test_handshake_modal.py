@@ -6,9 +6,9 @@ import pytest
 
 textual = pytest.importorskip("textual")
 
-from textual.app import App  # noqa: E402
+from textual.app import App
 
-from wlan_dumper.tui.modals import HandshakeModal  # noqa: E402
+from wlan_dumper.tui.modals import HandshakeModal
 
 
 class _Harness(App):
@@ -64,7 +64,7 @@ def test_positive_int_falls_back_on_garbage() -> None:
     assert _positive_int("8", default=99) == 8
     assert _positive_int("", default=99) == 99
     assert _positive_int(None, default=99) == 99
-    assert _positive_int("-3", default=99) == 99   # negative → fallback
-    assert _positive_int("0", default=99) == 99    # zero → fallback
+    assert _positive_int("-3", default=99) == 99  # negative → fallback
+    assert _positive_int("0", default=99) == 99  # zero → fallback
     assert _positive_int("abc", default=99) == 99  # type='integer' filters this anyway
     assert _positive_int(" 12 ", default=99) == 12

@@ -11,7 +11,7 @@ import pytest
 
 scapy = pytest.importorskip("scapy.all")
 
-from scapy.all import (  # noqa: E402
+from scapy.all import (
     AKMSuite,
     Dot11,
     Dot11Beacon,
@@ -23,8 +23,8 @@ from scapy.all import (  # noqa: E402
     RSNCipherSuite,
 )
 
-from wlan_dumper.core.events import BeaconSeen, ClientSeen, ProbeSeen  # noqa: E402
-from wlan_dumper.core.sniffer import dissect_packet  # noqa: E402
+from wlan_dumper.core.events import BeaconSeen, ClientSeen, ProbeSeen
+from wlan_dumper.core.sniffer import dissect_packet
 
 
 def _radiotap(signal_dbm: int) -> RadioTap:
@@ -202,7 +202,8 @@ class TestEapolDissection:
         eapol = EAPOL(version=2, type=3, len=len(body)) / body
         pkt = (
             Dot11(
-                type=2, subtype=8,
+                type=2,
+                subtype=8,
                 addr1="aa:bb:cc:dd:ee:01",
                 addr2="11:22:33:44:55:66",
                 addr3="aa:bb:cc:dd:ee:01",

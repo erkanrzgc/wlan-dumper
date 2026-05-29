@@ -195,7 +195,7 @@ def dissect_packet(pkt: Any, *, now: float | None = None) -> list[Event]:
             wps = _has_wps_ie(pkt.getlayer(Dot11Elt))
             # beacon_interval is in TUs (1 TU = 1.024 ms); convert to ms.
             interval_tu = int(getattr(beacon, "beacon_interval", 0) or 0)
-            interval_ms = int(round(interval_tu * 1.024)) if interval_tu else 0
+            interval_ms = round(interval_tu * 1.024) if interval_tu else 0
             out.append(
                 BeaconSeen(
                     timestamp=ts,
