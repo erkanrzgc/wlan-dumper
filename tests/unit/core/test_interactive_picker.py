@@ -37,7 +37,7 @@ class TestInteractivePicker:
         a = _ad("wlan0", ADAPTERS[(0x0CF3, 0x9271)])
         called = False
 
-        def fake_picker(adapters: list[DetectedAdapter]) -> DetectedAdapter:
+        def fake_picker(adapters: list[DetectedAdapter], **_kwargs: object) -> DetectedAdapter:
             nonlocal called
             called = True
             assert adapters == [a]
@@ -100,11 +100,55 @@ class TestInteractivePicker:
                 stdout=io.StringIO(),
             )
 
-    def test_no_adapters_raises(self) -> None:
+    def test_no_adapters_raises_in_non_tty(self) -> None:
+        # Scripts / pipes still hard-fail; only the interactive picker waits.
         with pytest.raises(click.ClickException):
             interactive_pick_adapter(
                 [], preferred_iface=None, stdin=io.StringIO(""), stdout=io.StringIO()
             )
+
+    def test_empty_adapters_opens_picker_when_tty(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # With a TTY, zero adapters must NOT raise — the picker opens and waits
+        # for one to be plugged in.
+        from cyberm4fia_wifi.plugins import scan
+
+        a = _ad("wlan0", ADAPTERS[(0x0CF3, 0x9271)])
+        seen_args: dict[str, object] = {}
+
+        def fake_picker(adapters: list[DetectedAdapter], **kwargs: object) -> DetectedAdapter:
+            seen_args["adapters"] = adapters
+            seen_args.update(kwargs)
+            return a  # pretend one showed up and the operator picked it
+
+        monkeypatch.setattr(scan, "_pick_adapter_tui", fake_picker)
+
+        chosen = interactive_pick_adapter(
+            [], preferred_iface=None, stdin=_TTY(), stdout=_TTY()
+        )
+        assert chosen is a
+        assert seen_args["adapters"] == []  # picker started empty
+
+    def test_unmatched_iface_falls_through_to_picker_when_tty(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # --iface points at an adapter that isn't present yet; in a TTY this
+        # should open the picker (which keeps watching) rather than error.
+        from cyberm4fia_wifi.plugins import scan
+
+        b = _ad("wlan1", ADAPTERS[(0x0BDA, 0x8812)])
+
+        def fake_picker(adapters: list[DetectedAdapter], **kwargs: object) -> DetectedAdapter:
+            assert kwargs.get("preferred_iface") == "wlan1"
+            return b
+
+        monkeypatch.setattr(scan, "_pick_adapter_tui", fake_picker)
+
+        chosen = interactive_pick_adapter(
+            [], preferred_iface="wlan1", stdin=_TTY(), stdout=_TTY()
+        )
+        assert chosen is b
 
 
 class TestCapturePaths:

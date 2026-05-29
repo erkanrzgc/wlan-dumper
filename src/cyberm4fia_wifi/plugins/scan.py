@@ -47,36 +47,56 @@ def pick_adapter(adapters: list[DetectedAdapter], preferred_iface: str | None) -
     return (with_injection or adapters)[0]
 
 
+# Picker behaviour when no adapter is present yet.
+_PICKER_POLL_INTERVAL = 2.0  # seconds between background re-scans for adapters
+_PICKER_IDLE_TIMEOUT = 30  # seconds with zero adapters before the picker self-closes
+
+
 def interactive_pick_adapter(
     adapters: list[DetectedAdapter],
     preferred_iface: str | None,
     *,
     stdin: Any = None,
     stdout: Any = None,
+    redetect: Any = None,
 ) -> DetectedAdapter:
-    """Ask the operator which adapter to use when more than one is present.
+    """Ask the operator which adapter to use.
 
-    Explicit ``--iface`` always wins. In an interactive terminal, scan startup
-    always shows a picker before monitor mode is touched; non-TTY callers keep
-    the old behavior (single adapter auto-picks, multiple adapters use a
-    numbered prompt).
+    Explicit ``--iface`` wins when that interface is already present. In an
+    interactive terminal the picker always opens — even with zero adapters —
+    and live-refreshes (``redetect`` every few seconds) so an adapter plugged
+    in after launch shows up without restarting. If nothing ever appears the
+    picker self-closes after ``_PICKER_IDLE_TIMEOUT`` seconds.
+
+    Non-TTY callers (scripts) keep the strict behaviour: zero adapters or an
+    unmatched ``--iface`` is a hard error, a single adapter auto-picks, and
+    multiple adapters use a numbered prompt.
     """
+    tty = _is_tty(stdin or sys.stdin) and _is_tty(stdout or sys.stdout)
+
+    # Explicit --iface that is already present always wins, TTY or not.
+    if preferred_iface:
+        for a in adapters:
+            if a.iface == preferred_iface:
+                return a
+        if not tty:
+            raise click.ClickException(
+                f"requested --iface {preferred_iface!r} not found; "
+                f"available: {[a.iface for a in adapters]}"
+            )
+        # TTY: fall through to the picker, which keeps watching for it.
+
+    if tty:
+        return _pick_adapter_tui(
+            adapters, redetect=redetect, preferred_iface=preferred_iface
+        )
+
+    # ---- non-interactive fall-through (scripts / pipes) ----
     if not adapters:
         raise click.ClickException(
             "no wireless adapters detected — is the radio plugged in and "
             "is the driver loaded? (try: dmesg | tail)"
         )
-    if preferred_iface:
-        for a in adapters:
-            if a.iface == preferred_iface:
-                return a
-        raise click.ClickException(
-            f"requested --iface {preferred_iface!r} not found; "
-            f"available: {[a.iface for a in adapters]}"
-        )
-    if _is_tty(stdin or sys.stdin) and _is_tty(stdout or sys.stdout):
-        return _pick_adapter_tui(adapters)
-
     if len(adapters) == 1:
         return adapters[0]
 
@@ -112,15 +132,22 @@ def _is_tty(stream: Any) -> bool:
     return bool(isatty and isatty())
 
 
-def _pick_adapter_tui(adapters: list[DetectedAdapter]) -> DetectedAdapter:
+def _pick_adapter_tui(
+    adapters: list[DetectedAdapter],
+    *,
+    redetect: Any = None,
+    preferred_iface: str | None = None,
+) -> DetectedAdapter:
     from textual.app import App, ComposeResult
     from textual.binding import Binding
     from textual.containers import Container
     from textual.widgets import DataTable, Static
 
-    from cyberm4fia_wifi.core.adapter import iface_link_info
+    from cyberm4fia_wifi.core.adapter import detect_adapters, iface_link_info
 
-    class AdapterPickerApp(App[int | None]):
+    redetect_fn = redetect or detect_adapters
+
+    class AdapterPickerApp(App["DetectedAdapter | None"]):
         TITLE = "cyberm4fia-wifi"
         BINDINGS: ClassVar[list[Binding]] = [
             Binding("enter", "select", "Select"),
@@ -137,12 +164,15 @@ def _pick_adapter_tui(adapters: list[DetectedAdapter]) -> DetectedAdapter:
         }
         #title { padding-bottom: 1; }
         #adapter_dt { height: auto; max-height: 14; }
+        #status { padding-top: 1; }
         #hint { padding-top: 1; }
         """
 
         def __init__(self) -> None:
             super().__init__()
+            self._adapters: list[DetectedAdapter] = list(adapters)
             self._chosen_idx: int = 0
+            self._idle_left: int = _PICKER_IDLE_TIMEOUT
 
         def compose(self) -> ComposeResult:
             with Container(id="picker"):
@@ -152,6 +182,7 @@ def _pick_adapter_tui(adapters: list[DetectedAdapter]) -> DetectedAdapter:
                     "Interface", "State", "MAC", "Chipset", "Driver", "Bands", "Inject"
                 )
                 yield table
+                yield Static("", id="status")
                 yield Static(
                     Text.assemble(
                         ("Only wireless interfaces shown — eth*, docker0, br-*, "
@@ -167,8 +198,15 @@ def _pick_adapter_tui(adapters: list[DetectedAdapter]) -> DetectedAdapter:
                 )
 
         def on_mount(self) -> None:
+            self._rebuild_table()
+            self._update_status()
+            self.set_interval(_PICKER_POLL_INTERVAL, self._poll)
+            self.set_interval(1.0, self._countdown)
+
+        def _rebuild_table(self) -> None:
             table = self.query_one("#adapter_dt", DataTable)
-            for idx, adapter in enumerate(adapters):
+            table.clear()
+            for idx, adapter in enumerate(self._adapters):
                 profile = adapter.profile
                 injection = "yes" if profile.injection else "no"
                 if profile.injection_unverified:
@@ -185,7 +223,50 @@ def _pick_adapter_tui(adapters: list[DetectedAdapter]) -> DetectedAdapter:
                     Text(injection, style="yellow" if profile.injection_unverified else ""),
                     key=str(idx),
                 )
-            table.focus()
+            if self._adapters:
+                self._chosen_idx = min(self._chosen_idx, len(self._adapters) - 1)
+                with contextlib.suppress(Exception):
+                    table.move_cursor(row=self._chosen_idx)
+                table.focus()
+
+        def _poll(self) -> None:
+            try:
+                found = list(redetect_fn())
+            except Exception:
+                # A failed rescan must never crash the picker; try again next tick.
+                return
+            # Auto-select the requested --iface the moment it appears.
+            if preferred_iface:
+                for adapter in found:
+                    if adapter.iface == preferred_iface:
+                        self.exit(adapter)
+                        return
+            if [a.iface for a in found] != [a.iface for a in self._adapters]:
+                self._adapters = found
+                self._rebuild_table()
+                self._update_status()
+
+        def _countdown(self) -> None:
+            if self._adapters:
+                self._idle_left = _PICKER_IDLE_TIMEOUT  # reset while we have something
+                return
+            self._idle_left -= 1
+            if self._idle_left <= 0:
+                self.exit(None)
+                return
+            self._update_status()
+
+        def _update_status(self) -> None:
+            status = self.query_one("#status", Static)
+            if self._adapters:
+                status.update(Text(""))
+            else:
+                status.update(
+                    Text.assemble(
+                        ("No wireless interface detected — plug one in. ", "yellow"),
+                        (f"closing in {self._idle_left}s", "dim"),
+                    )
+                )
 
         def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
             with contextlib.suppress(TypeError, ValueError):
@@ -197,16 +278,18 @@ def _pick_adapter_tui(adapters: list[DetectedAdapter]) -> DetectedAdapter:
             self.action_select()
 
         def action_select(self) -> None:
-            if 0 <= self._chosen_idx < len(adapters):
-                self.exit(self._chosen_idx)
+            if 0 <= self._chosen_idx < len(self._adapters):
+                self.exit(self._adapters[self._chosen_idx])
 
         def action_cancel(self) -> None:
             self.exit(None)
 
     selected = AdapterPickerApp().run()
     if selected is None:
-        raise click.ClickException("adapter selection cancelled")
-    return adapters[selected]
+        raise click.ClickException(
+            "no interface selected (cancelled or no adapter appeared in time)"
+        )
+    return selected
 
 
 class ScanPlugin(Plugin):
