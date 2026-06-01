@@ -10,7 +10,12 @@ scapy = pytest.importorskip("scapy.all")
 import scapy.all as s
 
 from wlan_dumper.core.auth import AuthorizationGate, AuthzConfig
-from wlan_dumper.core.events import EAPOLCapture, EventBus, HandshakeComplete
+from wlan_dumper.core.events import (
+    CaptureNotice,
+    EAPOLCapture,
+    EventBus,
+    HandshakeComplete,
+)
 from wlan_dumper.plugins.handshake import HandshakePlugin
 
 
@@ -219,3 +224,80 @@ class TestHandshakePcapArtifact:
         pkts = s.rdpcap(completes[0].pcap_path)
         assert [p for p in pkts if p.haslayer(s.Dot11Beacon)] == []
         assert sum(1 for p in pkts if p.haslayer(s.EAPOL)) == 2
+
+
+class TestCaptureTimeoutDiagnostic:
+    """On an empty capture, execute() must explain why — especially injection."""
+
+    def _run_until_timeout(
+        self, gate, monkeypatch: pytest.MonkeyPatch, *, auto_deauth: bool
+    ) -> list[CaptureNotice]:
+        # Don't transmit real frames; pretend the deauth burst was sent.
+        monkeypatch.setattr(
+            "wlan_dumper.plugins.handshake.DeauthPlugin.execute",
+            lambda self, **kw: 0,
+        )
+        bus = EventBus()
+        notices: list[CaptureNotice] = []
+        bus.subscribe(CaptureNotice, notices.append)
+        plugin = HandshakePlugin()
+        plugin.execute(
+            bus=bus,
+            gate=gate,
+            iface="wlan0",
+            target_bssid="aa:bb:cc:dd:ee:01",
+            target_station=None,
+            essid="MyHome",
+            auto_deauth=auto_deauth,
+            deauth_count=8,
+            timeout=0.05,
+        )
+        return notices
+
+    def test_deauth_sent_but_no_eapol_warns_injection(
+        self, gate, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        notices = self._run_until_timeout(gate, monkeypatch, auto_deauth=True)
+        assert len(notices) == 1
+        assert notices[0].level == "warning"
+        assert notices[0].deauth_sent == 8
+        assert notices[0].eapol_seen == 0
+        assert "injection" in notices[0].message.lower()
+
+    def test_passive_no_eapol_is_info_not_injection(
+        self, gate, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        notices = self._run_until_timeout(gate, monkeypatch, auto_deauth=False)
+        assert len(notices) == 1
+        assert notices[0].level == "info"
+        assert notices[0].deauth_sent == 0
+        assert "injection" not in notices[0].message.lower()
+
+    def test_partial_eapol_is_info_timing(
+        self, gate, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from wlan_dumper.utils import paths
+
+        monkeypatch.setattr(paths, "_CAPTURES", tmp_path / "captures")
+        monkeypatch.setattr(
+            "wlan_dumper.plugins.handshake.convert_to_22000", lambda p: None
+        )
+        monkeypatch.setattr(
+            "wlan_dumper.plugins.handshake.DeauthPlugin.execute",
+            lambda self, **kw: 0,
+        )
+
+        bssid, sta = "aa:bb:cc:dd:ee:01", "11:22:33:44:55:66"
+        bus = EventBus()
+        notices: list[CaptureNotice] = []
+        bus.subscribe(CaptureNotice, notices.append)
+
+        plugin = HandshakePlugin()
+        plugin._arm(bus=bus, target_bssid=bssid, target_station=None, essid="MyHome")
+        # Only M1 — a reaction, but no usable pair, so no completion.
+        bus.publish(_eapol(bssid, sta, 1))
+        plugin._emit_timeout_notice(bus, auto_deauth=True, deauth_sent=8)
+
+        assert notices[-1].level == "info"
+        assert notices[-1].eapol_seen == 1
+        assert "client is reacting" in notices[-1].message

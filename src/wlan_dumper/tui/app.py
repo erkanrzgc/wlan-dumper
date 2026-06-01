@@ -32,6 +32,7 @@ from textual.widgets import DataTable, Footer, Header, Log, Static
 
 from wlan_dumper.core.events import (
     BeaconSeen,
+    CaptureNotice,
     ChannelChanged,
     ClientSeen,
     CrackComplete,
@@ -280,7 +281,22 @@ class ScanApp(App[None]):
         self._bus.subscribe(CrackStarted, self._log_event)  # type: ignore[arg-type]
         self._bus.subscribe(CrackProgress, self._log_event)  # type: ignore[arg-type]
         self._bus.subscribe(CrackComplete, self._log_event)  # type: ignore[arg-type]
+        self._bus.subscribe(CaptureNotice, self._on_capture_notice)  # type: ignore[arg-type]
         self.set_interval(_REFRESH_INTERVAL, self._tick)
+
+    def _on_capture_notice(self, evt: CaptureNotice) -> None:
+        # Log it (columnar) and raise a toast so the operator sees the reason a
+        # capture came up empty — most importantly a likely injection failure.
+        self._log_event(evt)
+        from contextlib import suppress
+
+        with suppress(Exception):
+            self.call_from_thread(
+                self.notify,
+                evt.message,
+                severity="warning" if evt.level == "warning" else "information",
+                timeout=12,
+            )
 
     def _tick(self) -> None:
         if self._paused:
@@ -558,6 +574,9 @@ class ScanApp(App[None]):
         if isinstance(evt, EAPOLCapture):
             mi = evt.message_index if evt.message_index is not None else "?"
             return _log_row(stamp, "EAPOL", evt.station, evt.bssid, f"M{mi}/4")
+        if isinstance(evt, CaptureNotice):
+            tag = "WARN" if evt.level == "warning" else "NOTE"
+            return _log_row(stamp, tag, "-", evt.bssid, evt.message)
         if isinstance(evt, HandshakeComplete):
             verdict = "VALID" if evt.valid_by_hcxtool else "PARTIAL"
             artifact = evt.hashcat_path or evt.pcap_path

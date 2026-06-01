@@ -122,6 +122,22 @@ class CrackComplete(Event):
 
 
 @dataclass(frozen=True, slots=True)
+class CaptureNotice(Event):
+    """A diagnostic note from a handshake-capture run (e.g. timeout reason).
+
+    ``level`` is ``"info"`` or ``"warning"``. Used to tell the operator *why*
+    a capture produced nothing — most importantly to flag a likely injection
+    failure (deauths sent but no EAPOL seen).
+    """
+
+    bssid: str
+    level: str
+    message: str
+    deauth_sent: int = 0
+    eapol_seen: int = 0
+
+
+@dataclass(frozen=True, slots=True)
 class PMKIDFound(Event):
     """Phase 2b only — declared now to lock the contract."""
 

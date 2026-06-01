@@ -17,6 +17,7 @@ import click
 
 from wlan_dumper.core.auth import AuthorizationGate, PluginRisk
 from wlan_dumper.core.events import (
+    CaptureNotice,
     EAPOLCapture,
     EventBus,
     HandshakeComplete,
@@ -46,6 +47,7 @@ class HandshakePlugin(Plugin):
         self._pcap_path: Path | None = None
         self._state: set[int] = set()
         self._beacon_written = False
+        self._eapol_seen = 0  # any EAPOL on the target — proves traffic is flowing
         self._completed = threading.Event()
 
     # ---- CLI surface -------------------------------------------------------
@@ -119,6 +121,7 @@ class HandshakePlugin(Plugin):
             essid=essid,
         )
 
+        deauth_sent = 0
         try:
             if auto_deauth:
                 DeauthPlugin().execute(
@@ -130,10 +133,53 @@ class HandshakePlugin(Plugin):
                     count=deauth_count,
                     reason=reason,
                 )
+                deauth_sent = deauth_count
             self._completed.wait(timeout=timeout)
+            if not self._completed.is_set():
+                self._emit_timeout_notice(bus, auto_deauth, deauth_sent)
             return 0 if self._completed.is_set() else 1
         finally:
             self._disarm(bus)
+
+    def _emit_timeout_notice(self, bus: EventBus, auto_deauth: bool, deauth_sent: int) -> None:
+        """Explain an empty capture so the operator isn't left guessing.
+
+        The key signal is injection health: if we fired deauths but saw zero
+        EAPOL frames, the deauths almost certainly never hit the air (common on
+        in-kernel rtw88, especially on 5 GHz). If we saw EAPOL but not a full
+        pair, it's a timing/coverage issue, not injection.
+        """
+        bssid = self._target_bssid or ""
+        seen = self._eapol_seen
+        if auto_deauth and deauth_sent and seen == 0:
+            level = "warning"
+            message = (
+                f"no EAPOL after {deauth_sent} deauths — injection likely failed "
+                "(check 'sudo aireplay-ng --test <iface>'; rtw88 is unreliable on 5 GHz). "
+                "Try a 2.4 GHz AP or the morrownr driver."
+            )
+        elif seen == 0:
+            level = "info"
+            message = (
+                "no EAPOL seen — no client reconnected in time. "
+                "Enable auto-deauth or pick an AP with active clients."
+            )
+        else:
+            level = "info"
+            message = (
+                f"saw {seen} EAPOL frame(s) but no complete handshake — "
+                "client is reacting; retry with a larger burst or longer timeout."
+            )
+        bus.publish(
+            CaptureNotice(
+                timestamp=time.time(),
+                bssid=bssid,
+                level=level,
+                message=message,
+                deauth_sent=deauth_sent,
+                eapol_seen=seen,
+            )
+        )
 
     # ---- state machine ----------------------------------------------------
     def _arm(
@@ -151,6 +197,7 @@ class HandshakePlugin(Plugin):
         self._pcap_path = handshake_path(essid, target_bssid)
         self._state = set()
         self._beacon_written = False
+        self._eapol_seen = 0
         self._completed.clear()
         bus.subscribe(EAPOLCapture, self._on_eapol)
 
@@ -166,6 +213,11 @@ class HandshakePlugin(Plugin):
             return
         if self._target_station and evt.station.lower() != self._target_station:
             return
+
+        # Count every on-target EAPOL frame: even a partial handshake proves the
+        # client is reacting (deauth landed), which the timeout diagnostic uses
+        # to tell "injection failed" apart from "client never reconnected".
+        self._eapol_seen += 1
 
         # Persist every frame so even partial captures are diagnostically
         # useful. The bytes are raw radiotap-prefixed 802.11 frames, so they
