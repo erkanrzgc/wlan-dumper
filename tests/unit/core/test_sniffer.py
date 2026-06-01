@@ -107,9 +107,11 @@ def _make_data_frame(
     client: str = "11:22:33:44:55:66",
     signal_dbm: int = -50,
 ) -> RadioTap:
+    # to-DS frame (client → AP): FCfield ToDS bit set, addr1=BSSID, addr2=client.
     return _radiotap(signal_dbm) / Dot11(
         type=2,
         subtype=0,
+        FCfield="to-DS",
         addr1=bssid,
         addr2=client,
         addr3=bssid,
@@ -174,13 +176,64 @@ class TestDataFrameDissection:
         assert c.bssid == "aa:bb:cc:dd:ee:01"
         assert c.station == "11:22:33:44:55:66"
 
+    def test_to_ds_frame_maps_addr1_bssid_addr2_client(self) -> None:
+        evts = dissect_packet(_make_data_frame(), now=100.0)
+        assert len(evts) == 1
+        c = evts[0]
+        assert isinstance(c, ClientSeen)
+        assert c.bssid == "aa:bb:cc:dd:ee:01"
+        assert c.station == "11:22:33:44:55:66"
+
+    def test_from_ds_frame_maps_addr2_bssid_addr1_client(self) -> None:
+        # AP → client: addr1=client, addr2=BSSID. The AP must NOT be the station.
+        pkt = _radiotap(-50) / Dot11(
+            type=2,
+            subtype=0,
+            FCfield="from-DS",
+            addr1="11:22:33:44:55:66",
+            addr2="aa:bb:cc:dd:ee:01",
+            addr3="11:22:33:44:55:66",
+        )
+        evts = dissect_packet(pkt, now=100.0)
+        assert len(evts) == 1
+        c = evts[0]
+        assert isinstance(c, ClientSeen)
+        assert c.bssid == "aa:bb:cc:dd:ee:01"
+        assert c.station == "11:22:33:44:55:66"
+
     def test_data_frame_to_broadcast_is_ignored(self) -> None:
         pkt = _radiotap(-50) / Dot11(
             type=2,
             subtype=0,
+            FCfield="from-DS",
             addr1="ff:ff:ff:ff:ff:ff",
-            addr2="11:22:33:44:55:66",
+            addr2="aa:bb:cc:dd:ee:01",
+            addr3="ff:ff:ff:ff:ff:ff",
+        )
+        evts = dissect_packet(pkt, now=100.0)
+        assert evts == []
+
+    def test_ibss_frame_no_ds_bits_is_ignored(self) -> None:
+        # ToDS=0, FromDS=0 — ad-hoc/IBSS, no infrastructure AP to attribute.
+        pkt = _radiotap(-50) / Dot11(
+            type=2,
+            subtype=0,
+            addr1="11:22:33:44:55:66",
+            addr2="22:33:44:55:66:77",
             addr3="aa:bb:cc:dd:ee:01",
+        )
+        evts = dissect_packet(pkt, now=100.0)
+        assert evts == []
+
+    def test_wds_frame_both_ds_bits_is_ignored(self) -> None:
+        # ToDS=1, FromDS=1 — WDS bridge, both ends are APs, not a client.
+        pkt = _radiotap(-50) / Dot11(
+            type=2,
+            subtype=0,
+            FCfield="to-DS+from-DS",
+            addr1="aa:bb:cc:dd:ee:01",
+            addr2="aa:bb:cc:dd:ee:02",
+            addr3="11:22:33:44:55:66",
         )
         evts = dissect_packet(pkt, now=100.0)
         assert evts == []

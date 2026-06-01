@@ -257,21 +257,11 @@ def dissect_packet(pkt: Any, *, now: float | None = None) -> list[Event]:
             )
         return out
 
-    # Data frame: type=2 in FCfield. Extract (bssid, client) pair when possible.
-    fcfield = int(getattr(dot11, "type", -1))
-    if fcfield == 2:
-        addr1 = (dot11.addr1 or "").lower()
-        addr2 = (dot11.addr2 or "").lower()
-        addr3 = (dot11.addr3 or "").lower()
-        # Heuristic: in to-DS frames addr1=BSSID, addr2=client; in from-DS
-        # frames addr1=client, addr2=BSSID. addr3 is the other endpoint.
-        data_bssid = ""
-        client = ""
-        if not _is_broadcast(addr1) and not _is_broadcast(addr2):
-            # Without parsing FCfield.ToDS/FromDS we pick the safer pair: addr3
-            # is always either BSSID or remote endpoint; treat addr2 as station.
-            data_bssid = addr3 or addr1
-            client = addr2
+    # Data frame: type=2. Which address is the AP and which is the client
+    # depends on the ToDS/FromDS bits — guessing wrongly makes the AP itself
+    # look like a client and turns random remote hosts into phantom BSSIDs.
+    if int(getattr(dot11, "type", -1)) == 2:
+        data_bssid, client = _data_frame_endpoints(dot11)
         if data_bssid and client:
             out.append(
                 ClientSeen(
@@ -282,6 +272,36 @@ def dissect_packet(pkt: Any, *, now: float | None = None) -> list[Event]:
                 )
             )
     return out
+
+
+def _data_frame_endpoints(dot11: Any) -> tuple[str, str]:
+    """Return ``(bssid, client)`` for an infrastructure data frame, else ``("","")``.
+
+    Uses the ToDS/FromDS bits of the Frame Control field per IEEE 802.11:
+
+    - ToDS=1, FromDS=0  client → AP : addr1=BSSID, addr2=client
+    - ToDS=0, FromDS=1  AP → client : addr1=client, addr2=BSSID
+    - ToDS=0, FromDS=0  IBSS/ad-hoc : no infrastructure AP — ignored
+    - ToDS=1, FromDS=1  WDS         : both ends are APs — ignored
+
+    A broadcast/empty endpoint yields ``("", "")`` so the caller drops it.
+    """
+    fc = int(getattr(dot11, "FCfield", 0) or 0)
+    to_ds = bool(fc & 0x1)
+    from_ds = bool(fc & 0x2)
+    addr1 = (dot11.addr1 or "").lower()
+    addr2 = (dot11.addr2 or "").lower()
+
+    if to_ds and not from_ds:
+        bssid, client = addr1, addr2
+    elif from_ds and not to_ds:
+        bssid, client = addr2, addr1
+    else:
+        return "", ""  # IBSS or WDS — not a client↔AP association we track
+
+    if _is_broadcast(bssid) or _is_broadcast(client) or bssid == client:
+        return "", ""
+    return bssid, client
 
 
 def _is_broadcast(mac: str) -> bool:
