@@ -114,6 +114,8 @@ After `pip install`/`pipx`, the `wlan-dumper` command is available directly
 | `F5` | Pause / resume |
 | `h` | Capture handshake (opens a target dialog with auto-deauth) |
 | `d` | Deauth helper |
+| `k` | Crack the selected AP's captured handshake (wordlist / mask, live ETA) |
+| `x` | Cancel the running crack |
 | `c` / `a` | Focus the Clients / Access Points table |
 | `q` | Quit (restores the interface) |
 
@@ -121,14 +123,33 @@ Pressing `h` automatically locks the channel, fires the deauth burst (if enabled
 listens for the 4-way handshake — you do **not** need to lock manually first. Results
 land in `captures/handshakes/`.
 
+Once an AP shows a captured handshake (the **HS** column), press `k` to crack it. The
+crack dialog offers a wordlist or a mask, auto-detects the backend (`hashcat` preferred,
+`aircrack-ng` fallback), and shows a live keyspace + ETA estimate before you commit. Mask
+mode never writes candidates to disk — `hashcat -a 3` generates them internally, and the
+`aircrack-ng` path streams `crunch | aircrack-ng -w -`. A recovered passphrase shows in
+the **PW** column and is saved to `captures/cracked/`.
+
+### Crack from the CLI
+
+```bash
+# Wordlist
+wlan-dumper crack --hash captures/handshakes/Net_aabbcc_*.22000 -b AA:BB:CC:DD:EE:FF \
+  --mode wordlist -w /usr/share/wordlists/rockyou.txt
+
+# Mask / streaming brute-force (no candidates on disk)
+wlan-dumper crack --hash captures/handshakes/Net_aabbcc_*.pcap -b AA:BB:CC:DD:EE:FF \
+  --mode mask --mask '?d?d?d?d?d?d?d?d'
+```
+
 ## Roadmap
 
 | Stage | Status | Scope |
 |-------|--------|-------|
 | Scan + display | ✅ shipped | live 802.11 scan, TUI, adapter picker |
 | Deauth + handshake | ✅ shipped | deauth bursts, WPA handshake capture (`.pcap` + `.22000`) |
+| Crack engine | ✅ shipped | `hashcat` / `aircrack-ng` dispatch, wordlist + no-disk mask, live ETA |
 | PMKID + WPS | 🚧 planned | clientless PMKID, WPS attacks |
-| Crack engine | 🚧 planned | integrated `aircrack-ng` / `hashcat` dispatch |
 | Wordlist generator | 🚧 planned | `crunch` / rule-based candidate generation |
 
 ## Development
@@ -136,7 +157,7 @@ land in `captures/handshakes/`.
 ```bash
 pip install -e '.[dev]'
 
-pytest -q                       # run the test suite (136 tests)
+pytest -q                       # run the test suite (192 tests)
 ruff check . && ruff format .   # lint + format
 mypy src/wlan_dumper            # type-check the core
 ```
