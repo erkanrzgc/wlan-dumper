@@ -44,13 +44,14 @@ def _raw_eapol(bssid: str, sta: str) -> bytes:
     return bytes(pkt)
 
 
-def _eapol(bssid: str, sta: str, mi: int) -> EAPOLCapture:
+def _eapol(bssid: str, sta: str, mi: int, replay: int | None = 1) -> EAPOLCapture:
     return EAPOLCapture(
         timestamp=100.0 + mi,
         bssid=bssid,
         station=sta,
         message_index=mi,
         raw=_raw_eapol(bssid, sta),
+        replay_counter=replay,
     )
 
 
@@ -224,6 +225,62 @@ class TestHandshakePcapArtifact:
         pkts = s.rdpcap(completes[0].pcap_path)
         assert [p for p in pkts if p.haslayer(s.Dot11Beacon)] == []
         assert sum(1 for p in pkts if p.haslayer(s.EAPOL)) == 2
+
+
+class TestBroadcastStormPairing:
+    """A broadcast deauth interleaves frames from many clients; only a matched
+    same-client pair must be accepted (the real-world uncrackable-capture bug)."""
+
+    def _armed(self, gate, tmp_path, monkeypatch):
+        from wlan_dumper.utils import paths
+
+        monkeypatch.setattr(paths, "_CAPTURES", tmp_path / "captures")
+        monkeypatch.setattr(
+            "wlan_dumper.plugins.handshake.convert_to_22000", lambda p: None
+        )
+        bus = EventBus()
+        completes: list[HandshakeComplete] = []
+        bus.subscribe(HandshakeComplete, completes.append)
+        plugin = HandshakePlugin()
+        plugin._arm(
+            bus=bus, target_bssid="aa:bb:cc:dd:ee:01", target_station=None, essid="Net"
+        )
+        return plugin, bus, completes
+
+    def test_m1_and_m2_from_different_clients_do_not_pair(
+        self, gate, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _plugin, bus, completes = self._armed(gate, tmp_path, monkeypatch)
+        bssid = "aa:bb:cc:dd:ee:01"
+        # M1 to client A, M2 from client B — same as the captured garbage.
+        bus.publish(_eapol(bssid, "11:11:11:11:11:11", 1))
+        bus.publish(_eapol(bssid, "22:22:22:22:22:22", 2))
+        assert completes == []  # must NOT report a handshake
+
+    def test_same_client_m1_m2_pairs(
+        self, gate, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _plugin, bus, completes = self._armed(gate, tmp_path, monkeypatch)
+        bssid, sta = "aa:bb:cc:dd:ee:01", "11:11:11:11:11:11"
+        # Noise from another client first, then a clean same-client pair.
+        bus.publish(_eapol(bssid, "22:22:22:22:22:22", 2))
+        bus.publish(_eapol(bssid, sta, 1))
+        bus.publish(_eapol(bssid, sta, 2))
+        assert len(completes) == 1
+        assert completes[0].station == sta
+        # The written pcap holds the beacon + exactly the two matched frames.
+        pkts = s.rdpcap(completes[0].pcap_path)
+        assert sum(1 for p in pkts if p.haslayer(s.EAPOL)) == 2
+
+    def test_mismatched_replay_counters_do_not_pair(
+        self, gate, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _plugin, bus, completes = self._armed(gate, tmp_path, monkeypatch)
+        bssid, sta = "aa:bb:cc:dd:ee:01", "11:11:11:11:11:11"
+        # Same client but M1 and M2 from two different authentications.
+        bus.publish(_eapol(bssid, sta, 1, replay=5))
+        bus.publish(_eapol(bssid, sta, 2, replay=9))
+        assert completes == []
 
 
 class TestCaptureTimeoutDiagnostic:

@@ -45,9 +45,9 @@ class HandshakePlugin(Plugin):
         self._target_station: str | None = None
         self._essid: str | None = None
         self._pcap_path: Path | None = None
-        self._state: set[int] = set()
         self._beacon_written = False
         self._eapol_seen = 0  # any EAPOL on the target — proves traffic is flowing
+        self._candidates: dict[str, dict[int, tuple[int | None, bytes]]] = {}
         self._completed = threading.Event()
 
     # ---- CLI surface -------------------------------------------------------
@@ -194,9 +194,13 @@ class HandshakePlugin(Plugin):
         self._target_station = target_station.lower() if target_station else None
         self._essid = essid
         self._pcap_path = handshake_path(essid, target_bssid)
-        self._state = set()
         self._beacon_written = False
         self._eapol_seen = 0
+        # Per-client message buffer: station -> {msg_index: (replay_counter, raw)}.
+        # Keeping frames separated by client is what stops a broadcast-deauth
+        # storm from interleaving M1 (client A) with M2 (client B) into an
+        # uncrackable pcap.
+        self._candidates: dict[str, dict[int, tuple[int | None, bytes]]] = {}
         self._completed.clear()
         bus.subscribe(EAPOLCapture, self._on_eapol)
 
@@ -212,59 +216,77 @@ class HandshakePlugin(Plugin):
             return
         if self._target_station and evt.station.lower() != self._target_station:
             return
+        if evt.message_index is None:
+            return  # not a 4-way message we can place
 
         # Count every on-target EAPOL frame: even a partial handshake proves the
         # client is reacting (deauth landed), which the timeout diagnostic uses
         # to tell "injection failed" apart from "client never reconnected".
         self._eapol_seen += 1
 
-        # Persist every frame so even partial captures are diagnostically
-        # useful. The bytes are raw radiotap-prefixed 802.11 frames, so they
-        # must be decoded as RadioTap (NOT Ether) and written under the radiotap
-        # DLT — otherwise hcxpcapngtool sees "DLT_EN10MB, radiotap missing" and
-        # reads zero frames from the file.
+        # Buffer frames per client so a broadcast-deauth storm can't interleave
+        # M1 from one station with M2 from another. We only write a pcap once a
+        # single client yields a matched pair.
+        station = evt.station.lower()
+        by_msg = self._candidates.setdefault(station, {})
+        by_msg[evt.message_index] = (evt.replay_counter, evt.raw)
+
+        pair = self._matched_pair(by_msg)
+        if pair is None:
+            return
+
+        # Build a clean pcap: synthetic ESSID beacon + exactly the matched pair,
+        # both decoded as RadioTap and written under the radiotap DLT so
+        # hcxpcapngtool can read them.
         import scapy.all as s
 
-        try:
-            frame: Any = s.RadioTap(evt.raw)
-        except Exception:
-            frame = s.Raw(load=evt.raw)
-
         frames: list[Any] = []
-        # hcxpcapngtool needs a beacon/probe-resp to bind the EAPOL frames to an
-        # ESSID before it can emit a hash. We know the ESSID from the AP the
-        # operator selected, so we reconstruct one beacon deterministically
-        # rather than racing to sniff a real one mid-capture. Written once.
-        if not self._beacon_written:
-            beacon = self._synthetic_beacon()
-            if beacon is not None:
-                frames.append(beacon)
-            self._beacon_written = True
-        frames.append(frame)
+        beacon = self._synthetic_beacon()
+        if beacon is not None:
+            frames.append(beacon)
+        for _mi, (_rc, raw) in sorted(pair.items()):
+            try:
+                frames.append(s.RadioTap(raw))
+            except Exception:
+                frames.append(s.Raw(load=raw))
         append_packets(self._pcap_path, frames, linktype=_DLT_IEEE802_11_RADIO)
 
-        if evt.message_index is not None:
-            self._state.add(evt.message_index)
-
-        # A crackable WPA handshake needs the AP's ANONCE (M1) plus the client's
-        # SNONCE+MIC (M2); M2+M3 also works. Emit as soon as we have a usable
-        # pair — do NOT gate on hcxpcapngtool succeeding: the capture is real
-        # even when the conversion tool is missing or the pcap lacks extras.
-        # ``valid_by_hcxtool`` records whether the .22000 was actually produced.
-        have_pair = {1, 2}.issubset(self._state) or {2, 3}.issubset(self._state)
-        if have_pair:
-            hashcat = convert_to_22000(self._pcap_path)
-            self._bus.publish(
-                HandshakeComplete(
-                    timestamp=time.time(),
-                    bssid=self._target_bssid,
-                    station=evt.station,
-                    pcap_path=str(self._pcap_path),
-                    hashcat_path=str(hashcat) if hashcat else None,
-                    valid_by_hcxtool=hashcat is not None,
-                )
+        hashcat = convert_to_22000(self._pcap_path)
+        self._bus.publish(
+            HandshakeComplete(
+                timestamp=time.time(),
+                bssid=self._target_bssid,
+                station=station,
+                pcap_path=str(self._pcap_path),
+                hashcat_path=str(hashcat) if hashcat else None,
+                valid_by_hcxtool=hashcat is not None,
             )
-            self._completed.set()
+        )
+        self._completed.set()
+
+    @staticmethod
+    def _matched_pair(
+        by_msg: dict[int, tuple[int | None, bytes]],
+    ) -> dict[int, tuple[int | None, bytes]] | None:
+        """Return a crackable, same-exchange message pair from one client, else None.
+
+        A WPA handshake is crackable from M1+M2 (shared replay counter N) or
+        M2+M3 (M3 uses N+1). We require the counters to line up so two frames
+        from *different* authentications aren't mistaken for a pair. When a
+        replay counter is missing (None) we fall back to accepting the pair —
+        better a maybe-good capture than dropping a real one.
+        """
+        def counters_ok(a: int, b: int, *, consecutive: bool) -> bool:
+            ra, rb = by_msg[a][0], by_msg[b][0]
+            if ra is None or rb is None:
+                return True
+            return (rb == ra + 1) if consecutive else (ra == rb)
+
+        if 1 in by_msg and 2 in by_msg and counters_ok(1, 2, consecutive=False):
+            return {1: by_msg[1], 2: by_msg[2]}
+        if 2 in by_msg and 3 in by_msg and counters_ok(2, 3, consecutive=True):
+            return {2: by_msg[2], 3: by_msg[3]}
+        return None
 
     def _synthetic_beacon(self) -> Any | None:
         """Build a minimal beacon carrying the ESSID, or None for a hidden AP.

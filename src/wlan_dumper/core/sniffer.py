@@ -213,10 +213,13 @@ def dissect_packet(pkt: Any, *, now: float | None = None) -> list[Event]:
 
     EAPOL = getattr(s, "EAPOL", None)
     if EAPOL is not None and pkt.haslayer(EAPOL):
-        from wlan_dumper.utils.eapol import message_index
+        from wlan_dumper.utils.eapol import message_index, replay_counter
 
-        bssid = (dot11.addr3 or dot11.addr1 or "").lower()
-        station = (dot11.addr2 or "").lower()
+        # The client is whichever end isn't the AP — resolve via the DS bits so
+        # M1 (AP→client) reports the client as station, not the AP. Getting this
+        # wrong makes M1 and M2 look like they're from different stations, so
+        # they never pair into a crackable handshake.
+        bssid, station = _eapol_bssid_station(dot11)
         if bssid and station:
             out.append(
                 EAPOLCapture(
@@ -225,6 +228,7 @@ def dissect_packet(pkt: Any, *, now: float | None = None) -> list[Event]:
                     station=station,
                     message_index=message_index(pkt),
                     raw=bytes(pkt),
+                    replay_counter=replay_counter(pkt),
                 )
             )
         return out
@@ -272,6 +276,28 @@ def dissect_packet(pkt: Any, *, now: float | None = None) -> list[Event]:
                 )
             )
     return out
+
+
+def _eapol_bssid_station(dot11: Any) -> tuple[str, str]:
+    """Return ``(bssid, client)`` for an EAPOL key frame from the DS bits.
+
+    EAPOL frames are data frames, so the same ToDS/FromDS rules apply:
+    - FromDS (M1, M3, AP→client): addr1=client, addr2=BSSID
+    - ToDS   (M2, M4, client→AP): addr1=BSSID, addr2=client
+    Falls back to addr3=BSSID / addr2=station when neither bit is set.
+    """
+    fc = int(getattr(dot11, "FCfield", 0) or 0)
+    to_ds = bool(fc & 0x1)
+    from_ds = bool(fc & 0x2)
+    addr1 = (dot11.addr1 or "").lower()
+    addr2 = (dot11.addr2 or "").lower()
+    addr3 = (dot11.addr3 or "").lower()
+    if from_ds and not to_ds:
+        return addr2, addr1
+    if to_ds and not from_ds:
+        return addr1, addr2
+    # No DS bits (rare for EAPOL): best effort — addr3/addr1 is the AP.
+    return (addr3 or addr1), addr2
 
 
 def _data_frame_endpoints(dot11: Any) -> tuple[str, str]:

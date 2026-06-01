@@ -58,13 +58,16 @@ class EAPOLCapture(Event):
 
     ``message_index`` is the 1..4 position of this frame in the WPA 4-way
     handshake; ``None`` when the EAPOL Key Info field is unparseable.
-    ``raw`` is the full frame bytes so plugins can append it to a pcap.
+    ``station`` is always the client (not the AP), resolved from the DS bits.
+    ``replay_counter`` ties the frame to one exchange so a plugin can pair
+    M1↔M2 from the *same* client. ``raw`` is the full frame bytes for the pcap.
     """
 
     bssid: str
     station: str
     message_index: int | None
     raw: bytes
+    replay_counter: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

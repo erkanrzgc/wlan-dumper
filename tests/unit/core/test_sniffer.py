@@ -275,6 +275,32 @@ class TestEapolDissection:
         assert evt.message_index == 1
         assert isinstance(evt.raw, bytes) and len(evt.raw) > 0
 
+    def test_from_ds_m1_reports_client_as_station_not_ap(self) -> None:
+        # M1 is AP→client (from-DS): addr1=client, addr2=AP. The station must
+        # be the client, otherwise M1/M2 never pair into a handshake.
+        from scapy.all import EAPOL, Dot11
+
+        body = bytes([2]) + (0x008A).to_bytes(2, "big") + b"\x00\x00"
+        body += (3).to_bytes(8, "big") + b"\x00" * 81  # replay counter = 3
+        eapol = EAPOL(version=2, type=3, len=len(body)) / body
+        pkt = (
+            Dot11(
+                type=2,
+                subtype=8,
+                FCfield="from-DS",
+                addr1="11:22:33:44:55:66",  # client
+                addr2="aa:bb:cc:dd:ee:01",  # AP
+                addr3="11:22:33:44:55:66",
+            )
+            / eapol
+        )
+        from wlan_dumper.core.events import EAPOLCapture
+
+        evt = next(e for e in dissect_packet(pkt, now=100.0) if isinstance(e, EAPOLCapture))
+        assert evt.bssid == "aa:bb:cc:dd:ee:01"
+        assert evt.station == "11:22:33:44:55:66"  # client, not the AP
+        assert evt.replay_counter == 3
+
 
 class TestMfpDetection:
     def test_rsn_beacon_produces_a_known_mfp_status(self) -> None:

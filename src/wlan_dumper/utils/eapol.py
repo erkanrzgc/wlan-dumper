@@ -57,3 +57,25 @@ def message_index(pkt: Any) -> int | None:
     if mic and not ack and not install and secure:
         return 4
     return None
+
+
+def replay_counter(pkt: Any) -> int | None:
+    """Return the 64-bit EAPOL-Key Replay Counter, or None if unparseable.
+
+    A matched 4-way handshake pair shares one replay counter: M1↔M2 use the
+    AP's counter N, M3↔M4 use N+1. Comparing counters is how we tell whether
+    two captured frames belong to the *same* exchange (vs. a broadcast-deauth
+    storm where frames from different clients get interleaved).
+    """
+    s = _scapy()
+    EAPOL = s.EAPOL
+    if not pkt.haslayer(EAPOL):
+        return None
+    eapol = pkt[EAPOL]
+    if int(getattr(eapol, "type", -1)) != 3:
+        return None
+    payload = bytes(eapol.payload)
+    # key descriptor: [0]=type, [1:3]=key_info, [3:5]=key_len, [5:13]=replay
+    if len(payload) < 13:
+        return None
+    return int.from_bytes(payload[5:13], "big")
