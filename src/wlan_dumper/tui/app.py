@@ -118,8 +118,9 @@ def _band_for(channel: int) -> str:
 def _band_cell(channel: int) -> Text:
     """Short, colour-coded band tag for the AP table.
 
-    2.4 GHz is green because in-kernel rtw88 injection (deauth) is reliable
-    there; 5/6 GHz is yellow as a hint that injection is often unreliable.
+    2.4 GHz is green because frame injection (deauth) is widely supported there;
+    5/6 GHz is yellow as a hint that injection is often unreliable depending on
+    the adapter and driver.
     """
     if channel <= 14:
         return Text("2.4", style="green")

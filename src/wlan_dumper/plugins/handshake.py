@@ -145,18 +145,17 @@ class HandshakePlugin(Plugin):
         """Explain an empty capture so the operator isn't left guessing.
 
         The key signal is injection health: if we fired deauths but saw zero
-        EAPOL frames, the deauths almost certainly never hit the air (common on
-        in-kernel rtw88, especially on 5 GHz). If we saw EAPOL but not a full
-        pair, it's a timing/coverage issue, not injection.
+        EAPOL frames, the deauths almost certainly never hit the air. If we saw
+        EAPOL but not a full pair, it's a timing/coverage issue, not injection.
         """
         bssid = self._target_bssid or ""
         seen = self._eapol_seen
         if auto_deauth and deauth_sent and seen == 0:
             level = "warning"
             message = (
-                f"no EAPOL after {deauth_sent} deauths — injection likely failed "
-                "(check 'sudo aireplay-ng --test <iface>'; rtw88 is unreliable on 5 GHz). "
-                "Try a 2.4 GHz AP or the morrownr driver."
+                f"no EAPOL after {deauth_sent} deauths — frames may not be "
+                "reaching the air. Verify injection on this interface/channel, "
+                "try a closer client or 2.4 GHz, or use an injection-capable adapter."
             )
         elif seen == 0:
             level = "info"
