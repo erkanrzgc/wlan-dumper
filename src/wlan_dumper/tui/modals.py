@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal
 from textual.screen import ModalScreen
@@ -88,7 +89,13 @@ class HandshakeModal(ModalScreen[HandshakeRequest | None]):
     }
     Checkbox {
         height: 3;
+        width: auto;
         background: transparent;
+    }
+    #auto_deauth_state {
+        width: auto;
+        content-align: left middle;
+        padding-left: 2;
     }
     #row_buttons {
         align: right middle;
@@ -128,6 +135,7 @@ class HandshakeModal(ModalScreen[HandshakeRequest | None]):
             with Horizontal(classes="field_row"):
                 yield Label("Auto-deauth:", classes="field_label")
                 yield Checkbox("provoke reconnect", value=True, id="auto_deauth")
+                yield Static(self._deauth_state_text(True), id="auto_deauth_state")
 
             with Horizontal(classes="field_row"):
                 yield Label("Burst count:", classes="field_label")
@@ -149,6 +157,18 @@ class HandshakeModal(ModalScreen[HandshakeRequest | None]):
             with Horizontal(id="row_buttons"):
                 yield Button("Cancel", id="cancel_btn")
                 yield Button("Start", id="start_btn", variant="primary")
+
+    def _deauth_state_text(self, on: bool) -> Text:
+        """Big unambiguous ON/OFF tag so the checkbox state can't be misread."""
+        if on:
+            return Text("▶ ON — will deauth", style="bold green")
+        return Text("■ OFF — capture only", style="bold red")
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        if event.checkbox.id == "auto_deauth":
+            self.query_one("#auto_deauth_state", Static).update(
+                self._deauth_state_text(event.value)
+            )
 
     def _mfp_text(self) -> str:
         if self._mfp == "required":
