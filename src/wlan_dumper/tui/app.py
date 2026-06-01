@@ -115,6 +115,19 @@ def _band_for(channel: int) -> str:
     return "6 GHz"
 
 
+def _band_cell(channel: int) -> Text:
+    """Short, colour-coded band tag for the AP table.
+
+    2.4 GHz is green because in-kernel rtw88 injection (deauth) is reliable
+    there; 5/6 GHz is yellow as a hint that injection is often unreliable.
+    """
+    if channel <= 14:
+        return Text("2.4", style="green")
+    if channel <= 177:
+        return Text("5", style="yellow")
+    return Text("6", style="yellow")
+
+
 class ScanApp(App[None]):
     TITLE = "wlan-dumper"
     SUB_TITLE = "live 802.11 scan"
@@ -252,6 +265,7 @@ class ScanApp(App[None]):
             "Pwr",
             "Signal",
             "Ch",
+            "Band",
             "Encryption",
             "ESSID",
             "Vendor",
@@ -347,6 +361,7 @@ class ScanApp(App[None]):
                 Text(f"{ap.signal_dbm:>4}", style=_signal_style(ap.signal_dbm)),
                 Text(_signal_bars(ap.signal_dbm), style=_signal_style(ap.signal_dbm)),
                 Text(str(ap.channel)),
+                _band_cell(ap.channel),
                 Text(ap.encryption, style=enc_style),
                 essid_txt,
                 Text(vendor, style="dim"),
