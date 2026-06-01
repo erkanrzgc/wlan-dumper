@@ -11,6 +11,7 @@ from __future__ import annotations
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 import click
 
@@ -26,6 +27,11 @@ from wlan_dumper.utils.hcxtools import convert_to_22000
 from wlan_dumper.utils.paths import handshake_path
 from wlan_dumper.utils.pcap_writer import append_packets
 
+# libpcap DLT for radiotap-prefixed 802.11 frames. The sniffer hands us raw
+# radiotap bytes, so the pcap header must declare this or hcxpcapngtool treats
+# the file as Ethernet and reads nothing.
+_DLT_IEEE802_11_RADIO = 127
+
 
 class HandshakePlugin(Plugin):
     name = "handshake"
@@ -36,8 +42,10 @@ class HandshakePlugin(Plugin):
         self._bus: EventBus | None = None
         self._target_bssid: str | None = None
         self._target_station: str | None = None
+        self._essid: str | None = None
         self._pcap_path: Path | None = None
         self._state: set[int] = set()
+        self._beacon_written = False
         self._completed = threading.Event()
 
     # ---- CLI surface -------------------------------------------------------
@@ -139,8 +147,10 @@ class HandshakePlugin(Plugin):
         self._bus = bus
         self._target_bssid = target_bssid.lower()
         self._target_station = target_station.lower() if target_station else None
+        self._essid = essid
         self._pcap_path = handshake_path(essid, target_bssid)
         self._state = set()
+        self._beacon_written = False
         self._completed.clear()
         bus.subscribe(EAPOLCapture, self._on_eapol)
 
@@ -158,34 +168,77 @@ class HandshakePlugin(Plugin):
             return
 
         # Persist every frame so even partial captures are diagnostically
-        # useful.
+        # useful. The bytes are raw radiotap-prefixed 802.11 frames, so they
+        # must be decoded as RadioTap (NOT Ether) and written under the radiotap
+        # DLT — otherwise hcxpcapngtool sees "DLT_EN10MB, radiotap missing" and
+        # reads zero frames from the file.
         import scapy.all as s
 
         try:
-            wrapped = s.Ether(evt.raw)
+            frame: Any = s.RadioTap(evt.raw)
         except Exception:
-            wrapped = s.Raw(load=evt.raw)
-        append_packets(self._pcap_path, [wrapped])
+            frame = s.Raw(load=evt.raw)
+
+        frames: list[Any] = []
+        # hcxpcapngtool needs a beacon/probe-resp to bind the EAPOL frames to an
+        # ESSID before it can emit a hash. We know the ESSID from the AP the
+        # operator selected, so we reconstruct one beacon deterministically
+        # rather than racing to sniff a real one mid-capture. Written once.
+        if not self._beacon_written:
+            beacon = self._synthetic_beacon()
+            if beacon is not None:
+                frames.append(beacon)
+            self._beacon_written = True
+        frames.append(frame)
+        append_packets(self._pcap_path, frames, linktype=_DLT_IEEE802_11_RADIO)
 
         if evt.message_index is not None:
             self._state.add(evt.message_index)
 
-        # Validate once we have at least M1+M2 (sufficient for crack).
-        if {1, 2}.issubset(self._state):
+        # A crackable WPA handshake needs the AP's ANONCE (M1) plus the client's
+        # SNONCE+MIC (M2); M2+M3 also works. Emit as soon as we have a usable
+        # pair — do NOT gate on hcxpcapngtool succeeding: the capture is real
+        # even when the conversion tool is missing or the pcap lacks extras.
+        # ``valid_by_hcxtool`` records whether the .22000 was actually produced.
+        have_pair = {1, 2}.issubset(self._state) or {2, 3}.issubset(self._state)
+        if have_pair:
             hashcat = convert_to_22000(self._pcap_path)
-            valid = hashcat is not None or {1, 2, 3, 4}.issubset(self._state)
-            if valid:
-                self._bus.publish(
-                    HandshakeComplete(
-                        timestamp=time.time(),
-                        bssid=self._target_bssid,
-                        station=evt.station,
-                        pcap_path=str(self._pcap_path),
-                        hashcat_path=str(hashcat) if hashcat else None,
-                        valid_by_hcxtool=hashcat is not None,
-                    )
+            self._bus.publish(
+                HandshakeComplete(
+                    timestamp=time.time(),
+                    bssid=self._target_bssid,
+                    station=evt.station,
+                    pcap_path=str(self._pcap_path),
+                    hashcat_path=str(hashcat) if hashcat else None,
+                    valid_by_hcxtool=hashcat is not None,
                 )
-                self._completed.set()
+            )
+            self._completed.set()
+
+    def _synthetic_beacon(self) -> Any | None:
+        """Build a minimal beacon carrying the ESSID, or None for a hidden AP.
+
+        Returns a scapy ``RadioTap``/``Dot11Beacon`` frame whose SSID element
+        holds the target ESSID — this is what lets hcxpcapngtool associate the
+        EAPOL frames with a network name and emit a hash. Hidden networks
+        (no ESSID known) return ``None``; their name must be recovered first.
+        """
+        if not self._essid or self._target_bssid is None:
+            return None
+        import scapy.all as s
+
+        return (
+            s.RadioTap()
+            / s.Dot11(
+                type=0,
+                subtype=8,
+                addr1="ff:ff:ff:ff:ff:ff",
+                addr2=self._target_bssid,
+                addr3=self._target_bssid,
+            )
+            / s.Dot11Beacon(cap="ESS+privacy")
+            / s.Dot11Elt(ID=0, info=self._essid.encode("utf-8", "replace"))
+        )
 
     def run(self, ctx: PluginContext) -> int:  # pragma: no cover — CLI uses execute()
         raise NotImplementedError("call HandshakePlugin.execute(...) directly")

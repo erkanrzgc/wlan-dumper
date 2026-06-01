@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 scapy = pytest.importorskip("scapy.all")
-from scapy.all import Ether
+import scapy.all as s
 
 from wlan_dumper.core.auth import AuthorizationGate, AuthzConfig
 from wlan_dumper.core.events import EAPOLCapture, EventBus, HandshakeComplete
@@ -21,13 +21,31 @@ def gate(tmp_config_home) -> AuthorizationGate:
     return g
 
 
+def _raw_eapol(bssid: str, sta: str) -> bytes:
+    """Realistic radiotap-prefixed 802.11 QoS-data EAPOL-Key bytes, as captured.
+
+    The sniffer delivers raw radiotap frames; the plugin must persist them in a
+    form hcxpcapngtool can read, so tests feed it the real wire shape rather
+    than an Ethernet stub.
+    """
+    pkt = (
+        s.RadioTap()
+        / s.Dot11(type=2, subtype=8, addr1=sta, addr2=bssid, addr3=bssid)
+        / s.Dot11QoS()
+        / s.LLC(dsap=0xAA, ssap=0xAA, ctrl=3)
+        / s.SNAP(OUI=0, code=0x888E)
+        / s.EAPOL(version=2, type=3)
+    )
+    return bytes(pkt)
+
+
 def _eapol(bssid: str, sta: str, mi: int) -> EAPOLCapture:
     return EAPOLCapture(
         timestamp=100.0 + mi,
         bssid=bssid,
         station=sta,
         message_index=mi,
-        raw=bytes(Ether() / b"x"),
+        raw=_raw_eapol(bssid, sta),
     )
 
 
@@ -127,6 +145,77 @@ class TestHandshakeStateMachine:
             essid="MyHome",
         )
         for mi in (1, 2, 3, 4):
-            bus.publish(_eapol("zz:zz:zz:zz:zz:zz", "11:22:33:44:55:66", mi))
+            bus.publish(_eapol("99:99:99:99:99:99", "11:22:33:44:55:66", mi))
 
         assert completes == []
+
+
+class TestHandshakePcapArtifact:
+    """The saved pcap must be readable by hcxpcapngtool: radiotap DLT + ESSID.
+
+    Regression for handshake captures being written as Ethernet under
+    DLT_EN10MB with no beacon, which made every capture silently uncrackable.
+    """
+
+    def test_capture_is_radiotap_and_carries_essid_beacon(
+        self, gate, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from wlan_dumper.utils import paths
+
+        monkeypatch.setattr(paths, "_CAPTURES", tmp_path / "captures")
+        # Leave append_packets REAL — we assert on the bytes it writes.
+        monkeypatch.setattr(
+            "wlan_dumper.plugins.handshake.convert_to_22000", lambda p: None
+        )
+
+        bus = EventBus()
+        completes: list[HandshakeComplete] = []
+        bus.subscribe(HandshakeComplete, completes.append)
+
+        bssid, sta = "aa:bb:cc:dd:ee:01", "11:22:33:44:55:66"
+        plugin = HandshakePlugin()
+        plugin._arm(bus=bus, target_bssid=bssid, target_station=None, essid="MyHome")
+        bus.publish(_eapol(bssid, sta, 1))
+        bus.publish(_eapol(bssid, sta, 2))
+
+        # M1+M2 → exactly one completion; PARTIAL because hcx is stubbed to None.
+        assert len(completes) == 1
+        assert completes[0].valid_by_hcxtool is False
+
+        pkts = s.rdpcap(completes[0].pcap_path)
+        # Whole file decodes as radiotap (not the old corrupt Ether/EN10MB form).
+        assert all(type(p).__name__ == "RadioTap" for p in pkts)
+        # libpcap DLT in the global header is DLT_IEEE802_11_RADIO (127).
+        dlt = int.from_bytes(Path(completes[0].pcap_path).read_bytes()[20:24], "little")
+        assert dlt == 127
+        # Exactly one synthetic beacon carrying the ESSID was prepended.
+        beacons = [p for p in pkts if p.haslayer(s.Dot11Beacon)]
+        assert len(beacons) == 1
+        assert bytes(beacons[0].getlayer(s.Dot11Elt).info) == b"MyHome"
+        # Both EAPOL frames survived the round-trip.
+        assert sum(1 for p in pkts if p.haslayer(s.EAPOL)) == 2
+
+    def test_hidden_essid_skips_beacon_but_still_captures(
+        self, gate, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from wlan_dumper.utils import paths
+
+        monkeypatch.setattr(paths, "_CAPTURES", tmp_path / "captures")
+        monkeypatch.setattr(
+            "wlan_dumper.plugins.handshake.convert_to_22000", lambda p: None
+        )
+
+        bus = EventBus()
+        completes: list[HandshakeComplete] = []
+        bus.subscribe(HandshakeComplete, completes.append)
+
+        bssid, sta = "aa:bb:cc:dd:ee:01", "11:22:33:44:55:66"
+        plugin = HandshakePlugin()
+        plugin._arm(bus=bus, target_bssid=bssid, target_station=None, essid=None)
+        bus.publish(_eapol(bssid, sta, 1))
+        bus.publish(_eapol(bssid, sta, 2))
+
+        assert len(completes) == 1
+        pkts = s.rdpcap(completes[0].pcap_path)
+        assert [p for p in pkts if p.haslayer(s.Dot11Beacon)] == []
+        assert sum(1 for p in pkts if p.haslayer(s.EAPOL)) == 2
