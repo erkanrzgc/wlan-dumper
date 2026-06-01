@@ -27,6 +27,7 @@ from wlan_dumper.core.events import (
     BeaconSeen,
     ChannelChanged,
     ClientSeen,
+    CrackComplete,
     Event,
     EventBus,
     HandshakeComplete,
@@ -50,6 +51,9 @@ class APRecord:
     beacon_interval_ms: int = 0
     handshake_count: int = 0
     mfp_status: str = "unknown"
+    hashcat_path: str | None = None  # saved .22000 from a captured handshake
+    pcap_path: str | None = None  # saved handshake pcap (aircrack fallback)
+    cracked_password: str | None = None  # recovered passphrase, once cracked
 
 
 @dataclass(slots=True)
@@ -109,6 +113,40 @@ class Session:
                             break
                 if ap is not None:
                     ap.handshake_count += 1
+                    ap.pcap_path = event.pcap_path
+                    # A later partial capture must not blank an existing hash.
+                    if event.hashcat_path:
+                        ap.hashcat_path = event.hashcat_path
+        elif isinstance(event, CrackComplete):
+            with self._lock:
+                ap = self._find_ap(event.bssid)
+                if ap is not None and event.password is not None:
+                    ap.cracked_password = event.password
+
+    def _find_ap(self, bssid: str) -> APRecord | None:
+        """Look up an AP by BSSID, tolerant of case differences."""
+        ap = self._aps.get(bssid)
+        if ap is not None:
+            return ap
+        needle = bssid.lower()
+        for key, candidate in self._aps.items():
+            if key.lower() == needle:
+                return candidate
+        return None
+
+    def hashcat_path_for(self, bssid: str) -> str | None:
+        """Return the saved .22000 path for an AP, if a handshake produced one."""
+        with self._lock:
+            ap = self._find_ap(bssid)
+            return ap.hashcat_path if ap is not None else None
+
+    def crack_artifact_for(self, bssid: str) -> str | None:
+        """Best crackable artifact for an AP: prefer the .22000, else the pcap."""
+        with self._lock:
+            ap = self._find_ap(bssid)
+            if ap is None:
+                return None
+            return ap.hashcat_path or ap.pcap_path
 
     def attach(self, bus: EventBus) -> None:
         """Subscribe to the event types this session cares about."""
@@ -116,6 +154,7 @@ class Session:
         bus.subscribe(ClientSeen, self.handle_event)
         bus.subscribe(ChannelChanged, self.handle_event)
         bus.subscribe(HandshakeComplete, self.handle_event)
+        bus.subscribe(CrackComplete, self.handle_event)
 
     # ---- persistence --------------------------------------------------------
 

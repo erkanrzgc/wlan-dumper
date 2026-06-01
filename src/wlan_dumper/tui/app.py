@@ -34,6 +34,9 @@ from wlan_dumper.core.events import (
     BeaconSeen,
     ChannelChanged,
     ClientSeen,
+    CrackComplete,
+    CrackProgress,
+    CrackStarted,
     DeauthSent,
     EAPOLCapture,
     Event,
@@ -178,6 +181,8 @@ class ScanApp(App[None]):
         Binding("f5", "toggle_pause", "Pause"),
         Binding("d", "deauth_prompt", "Deauth"),
         Binding("h", "handshake_prompt", "Handshake"),
+        Binding("k", "crack_prompt", "Crack"),
+        Binding("x", "cancel_crack", "Cancel crack"),
         Binding("c", "focus_clients", "Clients"),
         Binding("a", "focus_aps", "APs"),
         Binding("q,f10", "quit", "Quit"),
@@ -205,6 +210,7 @@ class ScanApp(App[None]):
         self._selected_bssid: str | None = None
         self._started_at = time.time()
         self._known_bssids: set[str] = set()  # log gating: only-once new APs
+        self._active_crack: Any = None  # CrackPlugin instance while a crack runs
 
     # ---- compose ------------------------------------------------------------
 
@@ -252,6 +258,7 @@ class ScanApp(App[None]):
             "Data",
             "WPS",
             "HS",
+            "PW",
         )
         return table
 
@@ -270,6 +277,9 @@ class ScanApp(App[None]):
         self._bus.subscribe(DeauthSent, self._log_event)  # type: ignore[arg-type]
         self._bus.subscribe(EAPOLCapture, self._log_event)  # type: ignore[arg-type]
         self._bus.subscribe(HandshakeComplete, self._log_event)  # type: ignore[arg-type]
+        self._bus.subscribe(CrackStarted, self._log_event)  # type: ignore[arg-type]
+        self._bus.subscribe(CrackProgress, self._log_event)  # type: ignore[arg-type]
+        self._bus.subscribe(CrackComplete, self._log_event)  # type: ignore[arg-type]
         self.set_interval(_REFRESH_INTERVAL, self._tick)
 
     def _tick(self) -> None:
@@ -311,6 +321,11 @@ class ScanApp(App[None]):
                 if ap.handshake_count
                 else Text("·", style="dim")
             )
+            pw_marker = (
+                Text(f"🔑{ap.cracked_password}", style="bold green")
+                if ap.cracked_password
+                else Text("·", style="dim")
+            )
             table.add_row(
                 Text(ap.bssid, style="cyan"),
                 Text(f"{ap.signal_dbm:>4}", style=_signal_style(ap.signal_dbm)),
@@ -323,6 +338,7 @@ class ScanApp(App[None]):
                 Text(str(ap.data_count), style="cyan" if ap.data_count else "dim"),
                 wps_marker,
                 hs_marker,
+                pw_marker,
                 key=ap.bssid,
             )
         if previous and any(ap.bssid == previous for ap in rows):
@@ -552,6 +568,35 @@ class ScanApp(App[None]):
                 evt.bssid,
                 f"{verdict}  saved {artifact}",
             )
+        if isinstance(evt, CrackStarted):
+            from wlan_dumper.core.crack import humanize_count, humanize_duration
+
+            ks = humanize_count(evt.keyspace) if evt.keyspace is not None else "?"
+            eta = humanize_duration(evt.eta_seconds)
+            return _log_row(
+                stamp,
+                "CRACK",
+                "-",
+                evt.bssid,
+                f"start {evt.backend}/{evt.mode}  keyspace {ks}  ~{eta}",
+            )
+        if isinstance(evt, CrackProgress):
+            from wlan_dumper.core.crack import humanize_count, humanize_duration
+
+            done = humanize_count(evt.tried)
+            total = humanize_count(evt.total) if evt.total is not None else "?"
+            eta = humanize_duration(evt.eta_seconds)
+            return _log_row(
+                stamp,
+                "CRACK",
+                "-",
+                evt.bssid,
+                f"{done}/{total}  {evt.rate:,.0f}/s  ~{eta}",
+            )
+        if isinstance(evt, CrackComplete):
+            if evt.password is not None:
+                return _log_row(stamp, "CRACK", "-", evt.bssid, f"KEY FOUND: {evt.password}")
+            return _log_row(stamp, "CRACK", "-", evt.bssid, "exhausted — no key")
         return _log_row(stamp, "EVENT", "-", "-", type(evt).__name__)
 
     def _ap_label(self, bssid: str) -> str:
@@ -636,7 +681,8 @@ class ScanApp(App[None]):
 
     def action_help(self) -> None:
         self.notify(
-            "F2 sort · F3 filter · F4 lock channel · F5 pause · d/h attack · q quit",
+            "F2 sort · F3 filter · F4 lock · F5 pause · h handshake · k crack · "
+            "x cancel crack · q quit",
             timeout=10,
         )
 
@@ -705,6 +751,74 @@ class ScanApp(App[None]):
             "Auto-deauth toggle; the log shows every frame as it goes out.",
             timeout=8,
         )
+
+    def action_crack_prompt(self) -> None:
+        if not self._selected_bssid:
+            self.notify("select an AP first", severity="warning")
+            return
+        ap = next(
+            (a for a in self._session.aps_snapshot() if a.bssid == self._selected_bssid),
+            None,
+        )
+        if ap is None:
+            return
+        artifact = self._session.crack_artifact_for(ap.bssid)
+        if not artifact:
+            self.notify(
+                "no captured handshake for this AP — press 'h' to capture one first",
+                severity="warning",
+            )
+            return
+        if self._active_crack is not None:
+            self.notify("a crack is already running — press 'x' to cancel it first",
+                        severity="warning")
+            return
+
+        from wlan_dumper.tui.modals import CrackModal
+
+        captured = ap
+
+        def on_dismissed(req: Any) -> None:
+            if req is None:
+                self.notify("cancelled")
+                return
+            self._launch_crack_worker(captured, artifact, req)
+
+        self.push_screen(CrackModal(ap_bssid=ap.bssid, ap_essid=ap.essid), on_dismissed)
+
+    def _launch_crack_worker(self, ap: APRecord, artifact: str, req: Any) -> None:
+        from wlan_dumper.plugins.crack import CrackPlugin
+
+        plugin = CrackPlugin()
+        self._active_crack = plugin
+        self.notify(
+            f"crack started: {ap.essid or ap.bssid} ({req.mode})",
+            timeout=5,
+        )
+
+        def work() -> None:
+            try:
+                plugin.execute(
+                    bus=self._bus,
+                    gate=_resolve_gate(),
+                    hash_path=artifact,
+                    bssid=ap.bssid,
+                    essid=ap.essid,
+                    mode=req.mode,
+                    wordlist=req.wordlist,
+                    mask=req.mask,
+                )
+            finally:
+                self._active_crack = None
+
+        self.run_worker(work, thread=True, description="crack")
+
+    def action_cancel_crack(self) -> None:
+        if self._active_crack is None:
+            self.notify("no crack running", severity="warning")
+            return
+        self._active_crack.cancel()
+        self.notify("cancelling crack…")
 
 
 _ENC_STYLES = {

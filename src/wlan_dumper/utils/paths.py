@@ -92,3 +92,13 @@ def pmkid_path(essid: str | None, bssid: str, ts: float | None = None) -> Path:
 
 def session_dump_path(ts: float | None = None) -> Path:
     return sessions_dir() / f"session_{_timestamp(ts)}.json"
+
+
+def cracked_path(essid: str | None, bssid: str) -> Path:
+    """``captures/cracked/<essid>_<bssid>.txt`` for a recovered passphrase.
+
+    No timestamp: one stable file per network so a re-crack overwrites rather
+    than piling up duplicates.
+    """
+    name = f"{_safe_essid(essid)}_{_safe_bssid(bssid)}.txt"
+    return cracked_dir() / name

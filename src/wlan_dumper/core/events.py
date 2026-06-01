@@ -89,6 +89,39 @@ class HandshakeComplete(Event):
 
 
 @dataclass(frozen=True, slots=True)
+class CrackStarted(Event):
+    """An offline crack run just began (Phase 3a)."""
+
+    bssid: str
+    essid: str | None
+    backend: str  # "hashcat" | "aircrack-ng"
+    mode: str  # "wordlist" | "mask" | "smart"
+    keyspace: int | None  # total candidates if known (mask mode)
+    eta_seconds: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class CrackProgress(Event):
+    """Periodic progress from a running crack."""
+
+    bssid: str
+    tried: int
+    total: int | None  # None when keyspace is unbounded/unknown
+    rate: float  # candidates/sec
+    eta_seconds: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class CrackComplete(Event):
+    """A crack finished: ``password`` is None when exhausted/cancelled."""
+
+    bssid: str
+    essid: str | None
+    password: str | None
+    elapsed_seconds: float
+
+
+@dataclass(frozen=True, slots=True)
 class PMKIDFound(Event):
     """Phase 2b only — declared now to lock the contract."""
 
